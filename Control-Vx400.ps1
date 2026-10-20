@@ -345,6 +345,7 @@ function Start-Controller([bool]$Control,[switch]$ManualDry) {
     Set-Notice $(if($ManualDry){'Secado manual solicitado. Una sola ejecucion; ante una perdida de comunicacion se detiene.'}else{'Inicio solicitado. Esperando los datos del controlador…'})
 }
 function Start-PanelCommand([ValidateSet('Normal','Blackout','White')][string]$Display) {
+    $script:panelDisplay.SelectedIndex=switch($Display){'Blackout'{0};'Normal'{1};'White'{2}}
     if($script:smoke){throw 'Mandos deshabilitados en SmokeTest.'}
     if($null -ne $script:panelProcess -or $null -ne $script:panelPending){throw 'Espere a que termine el mando anterior.'}
     if($null -ne $script:manualProcess -and -not $script:manualProcess.HasExited -and -not (Test-Running)){throw 'Espere a que el controlador publique su estado.'}
@@ -798,6 +799,8 @@ function Invoke-GuiSmoke {
         if($script:notice.Text -ne 'Mandos deshabilitados en SmokeTest.'){throw ('Smoke: Apply handler failed: '+$script:notice.Text)}
         $button.PerformClick()
         if($script:notice.Text -ne 'Mandos deshabilitados en SmokeTest.'){throw ('Smoke: direct button handler failed: '+$script:notice.Text)}
+        if($script:panelDisplay.SelectedIndex -ne 2){throw 'Smoke: quick display button did not update selected content.'}
+        $script:panelDisplay.SelectedIndex=0
         $runDry.PerformClick()
         if($script:notice.Text -ne 'Controlador deshabilitado en SmokeTest.'){throw ('Smoke: manual dry handler failed: '+$script:notice.Text)}
         Set-Notice 'Vista de prueba. No se enviaron mandos.'

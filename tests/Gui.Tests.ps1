@@ -38,7 +38,8 @@ try{
         $path=Join-Path $OutputDirectory $name
         if(-not (Test-Path -LiteralPath $path)){throw "Missing screenshot $name"}
         $bitmap=[Drawing.Image]::FromFile($path)
-        try{if($bitmap.Width -lt 1050 -or $bitmap.Height -lt 700){throw "Unexpected screenshot dimensions: $name"}}finally{$bitmap.Dispose()}
+        # Windows can constrain the requested minimum to its desktop working area (1044 x 788 in CI).
+        try{if($bitmap.Width -lt 1000 -or $bitmap.Height -lt 650){throw "Unexpected screenshot dimensions: $name ($($bitmap.Width)x$($bitmap.Height))"}}finally{$bitmap.Dispose()}
     }
     foreach($name in $files){if((Get-FileHash -LiteralPath (Join-Path $root $name) -Algorithm SHA256).Hash -ne $hashes[$name]){throw "Source modified by smoke: $name"}}
     Write-Output ($output -join [Environment]::NewLine)

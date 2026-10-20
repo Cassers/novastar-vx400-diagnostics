@@ -34,9 +34,11 @@ jobs:
         shell: powershell
         run: python .\tests\plan_runtime_tests.py
       - name: Native Windows interface and screenshots
+        if: ${{ !cancelled() }}
         shell: powershell
         run: .\tests\Gui.Tests.ps1
       - name: Native control task installation and migration
+        if: ${{ !cancelled() }}
         shell: powershell
         run: .\tests\ControlInstaller.Tests.ps1
       - name: Native interface screenshots

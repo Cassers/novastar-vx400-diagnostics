@@ -44,8 +44,34 @@ function Read-VxWatcherConfig {
         }
         if ($profile.pattern -notin @('White','FromInput')) { throw 'pattern must be White or FromInput.' }
         Assert-VxNumber $profile.normalBrightnessPercent 0 100 normalBrightnessPercent
-        if ($null -eq $profile.stages -or @($profile.stages).Count -lt 1 -or @($profile.stages).Count -gt 32) {
-            throw 'Sequence requires 1..32 stages.'
+        # Optional ramp keeps schemaVersion 1 compatible with existing stage profiles.
+        $rampProperty = $profile.PSObject.Properties['ramp']
+        if ($null -ne $rampProperty -and $null -ne $rampProperty.Value) {
+            $ramp = $rampProperty.Value
+            if ($ramp.enabled -isnot [bool]) { throw 'ramp.enabled must be a boolean.' }
+            if ($ramp.enabled) {
+                if (@($profile.stages).Count -gt 0) { throw 'Choose ramp or explicit stages; not both.' }
+                Assert-VxNumber $ramp.durationMinutes 1 10080 ramp.durationMinutes
+                Assert-VxNumber $ramp.startBrightnessPercent 0 100 ramp.startBrightnessPercent
+                Assert-VxNumber $ramp.stepSeconds 1 3600 ramp.stepSeconds
+                $start = [double]$ramp.startBrightnessPercent
+                $target = [double]$profile.normalBrightnessPercent
+                if ($start -ge $target -or [Math]::Floor($start*255/100) -ge [Math]::Floor($target*255/100)) {
+                    throw 'Ramp start must be below normal brightness by at least one hardware level.'
+                }
+                [double]$seconds = $ramp.durationMinutes*60
+                [int]$count = [Math]::Min(256,[Math]::Max(2,[Math]::Ceiling($seconds/$ramp.stepSeconds)))
+                $profile.stages = @(for ($i=0; $i -lt $count; $i++) {
+                    [pscustomobject]@{
+                        brightnessPercent=($start+($target-$start)*$i/$count)
+                        durationSeconds=($seconds/$count)
+                    }
+                })
+                # The final normal-brightness command is the ramp's endpoint at t=duration.
+            }
+        }
+        if ($null -eq $profile.stages -or @($profile.stages).Count -lt 1 -or @($profile.stages).Count -gt 256) {
+            throw 'Sequence requires 1..256 stages.'
         }
         [double]$last = -1
         [double]$total = 0

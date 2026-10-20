@@ -67,6 +67,7 @@ def profile(port):
                              normalBrightnessPercent=30,
                              stages=[dict(brightnessPercent=5, durationSeconds=1),
                                      dict(brightnessPercent=10, durationSeconds=1)])
+    config['sequence']['ramp']['enabled'] = False
     return config
 
 

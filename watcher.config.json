@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "deviceAddress": "192.168.0.10",
+  "tcpPort": 5200,
+  "pollIntervalSeconds": 2,
+  "timeoutMs": 1500,
+  "offlineFailures": 3,
+  "onlineSuccesses": 2,
+  "maximumObservationGapSeconds": 30,
+  "sequence": {
+    "approved": false,
+    "curveReference": "",
+    "panelPowerCouplingVerified": false,
+    "startupProtectionVerified": false,
+    "pattern": "White",
+    "normalBrightnessPercent": null,
+    "stages": []
+  }
+}

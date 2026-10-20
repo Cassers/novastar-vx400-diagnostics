@@ -1,4 +1,4 @@
-name: Windows diagnostics tests
+name: Windows VX400 tests
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
@@ -16,3 +16,9 @@ jobs:
       - name: Hardware-view fallback without NovaLCT
         shell: powershell
         run: .\Test-Vx400.ps1 -InventoryOnly -CaptureNovaLctHardwareInfo -AssumeLatestFirmware -OutputDirectory "$env:RUNNER_TEMP\vx400-inventory"
+      - name: Watcher against local fake VX400 only
+        shell: powershell
+        run: python .\tests\watcher_tests.py
+      - name: Protected Windows scheduled-task installer
+        shell: powershell
+        run: .\tests\Installer.Tests.ps1

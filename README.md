@@ -1,4 +1,45 @@
-# Diagnóstico del NovaStar VX400 original
+# Diagnóstico y monitor permanente del NovaStar VX400 original
+
+## Monitor automático por Ethernet — v0.2.0
+
+El paquete incluye diagnóstico puntual y un monitor para dejar en el PC del sitio. **Por defecto solo consulta y registra; no cambia el brillo.** El motor de etapas está implementado, pero la curva de producción no viene configurada: depende de los paneles y su puesta en marcha.
+
+1. Extrae todo el ZIP. Edita `watcher.config.json` con Bloc de notas para poner la IP del **puerto CONTROL Ethernet**, normalmente TCP 5200. Si están conectados LAN y USB, verifica `Communication > Mode > LAN Preferred` en el VX400. Conecta el PC a la misma subred. El monitor usa Ethernet; no implementa control USB.
+2. Abre `Monitor-VX400.bat`. Consulta ModelID cada 2 segundos, con timeout de 1,5 segundos por intercambio. Los intervalos efectivos incluyen el tiempo de respuesta; no es una medición eléctrica instantánea.
+3. Revisa `watcher-data/estado.json` y `watcher-data/eventos.jsonl`. Registra la primera conexión, los sondeos fallidos, tres fallos consecutivos como `sin_comunicacion` y dos respuestas correctas como conexión recuperada. Ctrl+C termina la ejecución manual.
+4. Para dejarlo instalado, cierra el monitor manual y pulsa botón derecho → **Ejecutar como administrador** en `Instalar-Monitor-VX400.bat`. Instala una tarea de Windows bajo SYSTEM, sin inicio de sesión; arranca dentro de cinco minutos o al reiniciar. Un disparador cada cinco minutos relanza el proceso si terminó; no crea procesos paralelos.
+
+La instalación copia código/configuración a `%ProgramFiles%\NovaStar-VX400-Watcher`; guarda estado y diario en `%ProgramData%\NovaStar-VX400-Watcher`. Ambos quedan protegidos para SYSTEM y Administradores. Para consultar esos archivos o cambiar la configuración instalada, usa una sesión elevada. Editar la copia del ZIP **no** cambia la copia instalada. El instalador rechaza instalaciones existentes; no realiza actualizaciones implícitas. El diario rota a aproximadamente 1 MB y conserva cinco archivos anteriores.
+
+No deshabilita la suspensión de Windows: configura el PC del sitio para que permanezca operativo, tenga alimentación estable y Ethernet disponible. Prueba también su recuperación tras un corte de corriente; el arranque automático del propio PC depende del equipo/BIOS. La instalación no cambia firewall, red, drivers ni firmware.
+
+### Habilitar una curva después de verificarla
+
+`sequence.stages` acepta una lista en orden de objetos con `brightnessPercent` y `durationSeconds`. Los brillos deben ser crecientes o iguales; las duraciones son mínimas y pueden prolongarse por sondeo/ACK. No se acortan etapas para recuperar tiempo perdido. `normalBrightnessPercent` determina el brillo del contenido al finalizar. `pattern` puede ser `White` o `FromInput`; este último depende del contenido de vídeo que reciba el VX400.
+
+No hay valores térmicos de ejemplo en la configuración distribuida. Los perfiles cortos del simulador son exclusivamente pruebas de software y no deben copiarse a una pantalla. Los porcentajes se convierten al valor entero 0–255 redondeando hacia abajo; no son una medida de temperatura ni de humedad.
+
+Antes de habilitar el ciclo hay que documentar `curveReference` y verificar los campos `approved`, `panelPowerCouplingVerified` y `startupProtectionVerified`. Esas declaraciones del operador no son sensores ni certifican por sí mismas el montaje. Validación sin red:
+
+```powershell
+.\Watch-Vx400.ps1 -ConfigPath .\mi-perfil.site.json -EnableSequence -ValidateOnly
+```
+
+Con el perfil validado y la instalación probada, la ejecución supervisada es:
+
+```powershell
+.\Watch-Vx400.ps1 -ConfigPath .\mi-perfil.site.json -EnableSequence
+```
+
+La instalación con secuencia se hace desde **Windows PowerShell 5.1 como administrador**, usando `Install-Vx400Watcher.ps1 -ConfigPath .\mi-perfil.site.json -EnableSequence`. El BAT de instalación siempre instala el modo de solo lectura. Usa `-StartNow` si quieres que la tarea arranque inmediatamente; sin ese parámetro también arrancará automáticamente dentro de cinco minutos o al reiniciar.
+
+En modo secuencia: conexión inicial/recuperación estable → Blackout → primer brillo → patrón elegido → etapas → Blackout → brillo normal → Normal. Cada paso requiere respuesta válida. Una pérdida de comunicación descarta el avance y exige un nuevo ciclo desde el principio. Un fallo de comando de la secuencia deja `fallo` retenido, intenta Blackout/cero y requiere inspección y reinicio del proceso. Los intentos de oscurecer un equipo sin comunicación son best effort; al volver se requieren nuevos ACK antes de mostrar el patrón. El cierre normal intenta Blackout/cero; matar el proceso o cortar la alimentación puede impedirlo.
+
+**Límites del disparador:** perder comunicación puede ser un corte de red. Si se apagan solo los paneles y el VX400 sigue respondiendo, el monitor no lo detecta. Un corte breve entre sondeos también puede pasar inadvertido. No hay detección de humedad. La red y el PC no garantizan oscuridad desde el primer instante de encendido: ese intervalo requiere comportamiento de arranque comprobado o protección física. Debe comprobarse la alimentación conjunta de paneles y controlador antes de utilizar este disparador para el ciclo.
+
+Para retirar la tarea, ejecuta `Quitar-Monitor-VX400.bat` como administrador. Conserva código y registros; revisa el estado físico de la pantalla porque una terminación forzada no garantiza ejecutar los comandos de cierre. El diagnóstico puntual sigue disponible abajo.
+
+Diseño y aceptación en sitio: [docs/secuenciador.md](docs/secuenciador.md). [Validación](VALIDACION.md). No se afirma compatibilidad nativa de deshumidificación, eficacia térmica ni autonomía sin PC.
 
 Para ejecutar en el PC Windows del sitio, entrando por RustDesk. Windows PowerShell 5.1 o PowerShell 7; no requiere Python, administrador ni paquetes adicionales. Se entregan juntos `Test-Vx400.ps1` y `Vx400.Protocol.psm1`.
 

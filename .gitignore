@@ -1,4 +1,6 @@
 reports/
+watcher-data/
+*.site.json
 hardware*.txt
 *.log
 __pycache__/

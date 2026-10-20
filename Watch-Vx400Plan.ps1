@@ -291,7 +291,7 @@ try {
 }finally{
     # Forced process/PC termination can bypass finally. Physical startup blackout is essential.
     if($ownsMutex -and $null -ne $fileLock){
-        if($script:wrote){Try-PlanDark}
+        if($EnableControl -and $script:trusted){Try-PlanDark}
         if($script:fault){$exitCode=2}
         if($exitCode -eq 0){$script:status.state='STOPPED'}
         try{Write-PlanEvent 'stopped' 'Best-effort Blackout/zero on normal exit; progress is never resumed.'}catch{$exitCode=2}

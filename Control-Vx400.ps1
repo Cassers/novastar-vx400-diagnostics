@@ -349,7 +349,7 @@ function Start-PanelCommand([ValidateSet('Normal','Blackout','White')][string]$D
     if($null -ne $script:panelProcess -or $null -ne $script:panelPending){throw 'Espere a que termine el mando anterior.'}
     if($null -ne $script:manualProcess -and -not $script:manualProcess.HasExited -and -not (Test-Running)){throw 'Espere a que el controlador publique su estado.'}
     if(Test-Running){
-        if(-not $script:stateRecent -or ((Get-Property $script:state mode) -eq 'control' -and (Get-Property $script:state state) -notin @('BLACK','OPERATING'))){throw 'El brillo manual esta bloqueado durante la secuencia. Espere a que termine o use Detener.'}
+        if(-not $script:stateRecent -or ((Get-Property $script:state mode) -eq 'control' -and (Get-Property $script:state state) -notin @('BLACK','OPERATING'))){throw 'No se puede pasar a manual en el estado actual. Si hay una secuencia, espere a que termine; para cancelarla use Detener.'}
         $task=Get-ControlTask
         $script:panelResumeTask=($null -ne $task -and $task.Settings.Enabled)
         if($script:panelResumeTask){$null=Disable-ScheduledTask -TaskName 'NovaStar-VX400-Control' -TaskPath '\' -ErrorAction Stop}

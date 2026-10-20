@@ -27,9 +27,10 @@ def atomic_json(path, value):
 
 
 class PlanDevice(FakeDevice):
-    def __init__(self, drop_read_at=None, drop_brightness=False, offline_writes=False):
+    def __init__(self, drop_read_at=None, drop_brightness=False, offline_writes=False, read_gate=None):
         super().__init__()
         self.offline_writes = offline_writes
+        self.read_gate = read_gate
         self.read_count = 0
         self.drop_read_at = set(drop_read_at or [])
         self.drop_brightness = drop_brightness
@@ -64,6 +65,9 @@ class PlanDevice(FakeDevice):
                         self.failed_at = len(self.requests)-1
                         continue
                     payload = b'' if request[10] == 1 else b'\x11\x62'
+                    if self.read_gate is not None and request[10] == 0:
+                        self.read_gate.wait(6)
+                        self.read_gate = None
                     reply = make_reply(request, payload)
                     connection.sendall(reply[:5])
                     connection.sendall(reply[5:])
@@ -178,6 +182,31 @@ class PlanRuntimeTests(unittest.TestCase):
                 self.stop(directory);self.finish(p)
             finally:
                 if p.poll() is None:p.kill();p.communicate()
+
+    def test_manual_panel_bad_identity_reply_blocks_writes(self):
+        with FakeDevice(fault='identity_checksum') as device, tempfile.TemporaryDirectory() as directory:
+            path,_=self.config(directory,device)
+            result=self.manual_command(directory,path)
+            self.assertEqual(result.returncode,2);self.assertFalse(writes(device))
+
+    @unittest.skipIf(os.name == 'nt', 'Unix suspend fixture for manual one-shot')
+    def test_manual_panel_suspended_identity_reply_is_not_trusted(self):
+        gate=threading.Event()
+        with PlanDevice(read_gate=gate) as device,tempfile.TemporaryDirectory() as directory:
+            path,_=self.config(directory,device)
+            p=subprocess.Popen([POWERSHELL,'-NoProfile','-File',str(ROOT/'Set-Vx400Manual.ps1'),
+                '-ConfigPath',str(path),'-DataDirectory',directory,'-BrightnessPercent','10','-Display','White','-EnableControl'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            try:
+                deadline=time.monotonic()+5
+                while not device.requests and time.monotonic()<deadline:time.sleep(.005)
+                self.assertTrue(device.requests)
+                os.kill(p.pid,signal.SIGSTOP);gate.set();time.sleep(2.2);os.kill(p.pid,signal.SIGCONT)
+                self.finish(p,code=2)
+                self.assertFalse(writes(device))
+            finally:
+                gate.set()
+                if p.poll() is None:
+                    os.kill(p.pid,signal.SIGCONT);p.kill();p.communicate()
 
     def test_manual_panel_requires_explicit_control(self):
         with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:

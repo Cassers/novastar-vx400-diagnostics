@@ -13,8 +13,19 @@ Import-Module (Join-Path $PSScriptRoot 'Vx400.Schedule.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Vx400.Protocol.psm1') -Force
 $mutex=$null;$owns=$false;$lock=$null;$trusted=$false;$code=0;$script:sequence=0
 $utf8=New-Object Text.UTF8Encoding($false)
-function Send-ManualPacket([byte[]]$Packet){
-    $null=Invoke-VxExchange -DeviceAddress $config.deviceAddress -TcpPort $config.tcpPort -Request $Packet -TimeoutMs $config.timeoutMs
+$script:readStamp=0L;$script:readUtc=[DateTimeOffset]::MinValue
+function Exchange-ManualPacket([byte[]]$Packet){
+    $timer=[Diagnostics.Stopwatch]::StartNew();$utc=[DateTimeOffset]::UtcNow
+    $reply=Invoke-VxExchange -DeviceAddress $config.deviceAddress -TcpPort $config.tcpPort -Request $Packet -TimeoutMs $config.timeoutMs
+    if($timer.Elapsed.TotalSeconds -gt $config.maximumObservationGapSeconds -or [Math]::Abs(([DateTimeOffset]::UtcNow-$utc).TotalSeconds-$timer.Elapsed.TotalSeconds) -gt $config.maximumObservationGapSeconds){throw 'Observation gap during manual exchange; refusing stale reply.'}
+    return $reply
+}
+function Send-ManualPacket([byte[]]$Packet,[switch]$Recovery){
+    if(-not $Recovery){
+        $age=([Diagnostics.Stopwatch]::GetTimestamp()-$script:readStamp)/[double][Diagnostics.Stopwatch]::Frequency
+        if($age -gt $config.maximumObservationGapSeconds -or [Math]::Abs(([DateTimeOffset]::UtcNow-$script:readUtc).TotalSeconds-$age) -gt $config.maximumObservationGapSeconds){throw 'Stale ModelID; manual command cancelled.'}
+    }
+    $null=Exchange-ManualPacket $Packet
 }
 function Next-ManualSequence {$script:sequence=($script:sequence+1)%256;return [byte]$script:sequence}
 try{
@@ -27,9 +38,9 @@ try{
     if(-not $owns){throw 'Another controller owns this endpoint. Stop it before manual commands.'}
     $null=[IO.Directory]::CreateDirectory($DataDirectory)
     $lock=[IO.File]::Open((Join-Path $DataDirectory 'watcher.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
-    $reply=Invoke-VxExchange -DeviceAddress $config.deviceAddress -TcpPort $config.tcpPort -Request (New-VxReadRequest -Address 2 -Length 2 -Sequence (Next-ManualSequence)) -TimeoutMs $config.timeoutMs
+    $reply=Exchange-ManualPacket (New-VxReadRequest -Address 2 -Length 2 -Sequence (Next-ManualSequence))
     if($reply.Payload.Length -ne 2 -or [BitConverter]::ToUInt16($reply.Payload,0) -ne 0x6211){throw 'Wrong ModelID: expected original VX400 0x6211.'}
-    $trusted=$true
+    $trusted=$true;$script:readStamp=[Diagnostics.Stopwatch]::GetTimestamp();$script:readUtc=[DateTimeOffset]::UtcNow
     # No unknown brightness is exposed: acknowledged Blackout, then brightness, then chosen content.
     Send-ManualPacket (New-VxDisplayRequest -Mode Blackout -Sequence (Next-ManualSequence))
     $value=[byte][Math]::Floor($BrightnessPercent*255.0/100)
@@ -43,8 +54,8 @@ try{
 }catch{
     $code=2
     if($owns -and $null -ne $lock -and $trusted){
-        try{Send-ManualPacket (New-VxDisplayRequest -Mode Blackout -Sequence (Next-ManualSequence))}catch{}
-        try{Send-ManualPacket (New-VxBrightnessRequest -Value 0 -Sequence (Next-ManualSequence))}catch{}
+        try{Send-ManualPacket (New-VxDisplayRequest -Mode Blackout -Sequence (Next-ManualSequence)) -Recovery}catch{}
+        try{Send-ManualPacket (New-VxBrightnessRequest -Value 0 -Sequence (Next-ManualSequence)) -Recovery}catch{}
     }
     Write-Error $_ -ErrorAction Continue
 }finally{

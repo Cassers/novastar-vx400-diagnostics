@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "deviceAddress": "192.168.0.10",
+  "tcpPort": 5200,
+  "pollIntervalSeconds": 2,
+  "timeoutMs": 1500,
+  "offlineFailures": 3,
+  "onlineSuccesses": 2,
+  "maximumObservationGapSeconds": 30,
+  "timeZone": "SA Pacific Standard Time",
+  "profileAccepted": true,
+  "profileSource": "Propuesta general compartida por operador; origen no certificado",
+  "panelPowerCouplingVerified": false,
+  "startupProtectionVerified": false,
+  "conditioningPattern": "White",
+  "idleBrightnessPercent": 10,
+  "operatingBrightnessPercent": 80,
+  "dailyStarts": [
+    "04:00",
+    "18:00"
+  ],
+  "profiles": {
+    "dry": [
+      {
+        "name": "Subida",
+        "from": 10,
+        "to": 50,
+        "minutes": 24,
+        "content": "White"
+      },
+      {
+        "name": "Mantenimiento",
+        "from": 50,
+        "to": 50,
+        "minutes": 140,
+        "content": "White"
+      },
+      {
+        "name": "Bajada 50 a 30",
+        "from": 50,
+        "to": 30,
+        "minutes": 12,
+        "content": "White"
+      },
+      {
+        "name": "Bajada 30 a 15",
+        "from": 30,
+        "to": 15,
+        "minutes": 6,
+        "content": "White"
+      },
+      {
+        "name": "Bajada 15 a 10",
+        "from": 15,
+        "to": 10,
+        "minutes": 6,
+        "content": "White"
+      }
+    ],
+    "preheat": [
+      {
+        "name": "Subida",
+        "from": 10,
+        "to": 50,
+        "minutes": 24,
+        "content": "White"
+      },
+      {
+        "name": "Secado",
+        "from": 50,
+        "to": 50,
+        "minutes": 96,
+        "content": "White"
+      },
+      {
+        "name": "Rampa a operacion",
+        "from": 50,
+        "to": 80,
+        "minutes": 60,
+        "content": "FromInput"
+      },
+      {
+        "name": "Estabilizacion",
+        "from": 80,
+        "to": 80,
+        "minutes": 60,
+        "content": "FromInput"
+      }
+    ],
+    "cooldown": [
+      {
+        "name": "Bajada rapida",
+        "from": 80,
+        "to": 50,
+        "minutes": 12,
+        "content": "FromInput"
+      },
+      {
+        "name": "Bajada lenta",
+        "from": 50,
+        "to": 10,
+        "minutes": 12,
+        "content": "FromInput"
+      }
+    ]
+  },
+  "operatingWindows": []
+}

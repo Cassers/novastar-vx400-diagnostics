@@ -21,7 +21,9 @@ Por defecto: `192.168.0.10:5200`, consulta cada 2 segundos, timeout 1500 ms, tre
 |---|---|---|
 | DRY | 10→50 en 24 min; 50 durante 140 min; 50→30 en 12 min; 30→15 en 6 min; 15→10 en 6 min | 188 min |
 | PREHEAT | 10→50 en 24 min; 50 durante 96 min; 50→80 en 60 min; 80 durante 60 min | 240 min |
-| COOLDOWN | 80→50 en 12 min; 50→10 en 12 min, recortado al nivel real si es menor | 24 min |
+| COOLDOWN | 80→50 en 20 min; 50→10 en 16 min, recortado al nivel confirmado si es menor | 36 min |
+
+La actualización recibida fija COOLDOWN en 20 + 16 minutos. Prevalece esa columna de duración sobre los intervalos antiguos entre paréntesis; el motor interpola suavemente cada fase.
 
 DRY empieza a las 04:00 y 18:00 de Bogotá; a tiempo y sin interrupciones termina a las 07:08 y 21:08. Una conexión tardía dentro del intervalo realiza la curva completa; no comprime las etapas para respetar una ventana inventada de 150 minutos. Cada etapa se interpola en cada sondeo y el byte de brillo se redondea hacia abajo; solo se escribe cuando cambia, salvo confirmaciones necesarias al cambiar de patrón. Los hitos de bajada DRY son 40, 30, 15 y 10 cada seis minutos.
 
@@ -94,8 +96,8 @@ powershell.exe -NoProfile -File .\tests\Plan.Tests.ps1
 VX400_POWERSHELL=/tmp/metis-pwsh/pwsh python3 tests/plan_runtime_tests.py
 ```
 
-Las pruebas deben cubrir 188/240/24 minutos, hitos de curva, Bogotá, medianoche, cancelación/fin, enfriamiento parcial, modo lectura, ACK perdido, desconexión, aprobación pendiente persistida y comandos obsoletos. Windows 5.1 y GUI requieren validación de integración en Windows; no se afirma validación física del VX400.
+Las pruebas deben cubrir 188/240/36 minutos, hitos de curva, Bogotá, medianoche, cancelación/fin, enfriamiento parcial, modo lectura, ACK perdido, desconexión, aprobación pendiente persistida y comandos obsoletos. Windows 5.1 y GUI requieren validación de integración en Windows; no se afirma validación física del VX400.
 
 Rollback de esta unidad: retirar los dos archivos PowerShell, `plan.config.json`, sus dos pruebas y este documento, después de parar la tarea/proceso que los use. No afecta el diagnóstico ni el watcher anterior. No se realizan commits ni despliegues desde esta unidad.
 
-Evidencia local de esta unidad (2026-10-20): 200 aserciones puras, 12 escenarios TCP de loopback y análisis sintáctico de los tres archivos PowerShell aprobados en PowerShell 7.6.7/Linux. Los escenarios incluyen suspensión del proceso, mantenimiento de pregunta tras reinicio y pérdida de ACK de brillo. La prueba SIGSTOP/SIGCONT se omite en Windows porque esa señal no existe allí; su equivalente de suspensión requiere comprobación específica de Windows. La validación de GUI, tarea SYSTEM, ACL y compatibilidad 5.1 corresponde a la integración Windows del paquete.
+Evidencia local de esta unidad (2026-10-20): pruebas puras del plan, 12 escenarios TCP de loopback y análisis sintáctico de los tres archivos PowerShell aprobados en PowerShell 7.6.7/Linux. Los escenarios incluyen suspensión del proceso, mantenimiento de pregunta tras reinicio y pérdida de ACK de brillo. La prueba SIGSTOP/SIGCONT se omite en Windows porque esa señal no existe allí; su equivalente de suspensión requiere comprobación específica de Windows. La validación de GUI, tarea SYSTEM, ACL y compatibilidad 5.1 corresponde a la integración Windows del paquete.

@@ -503,7 +503,7 @@ function Invoke-Tick {
 
 $script:form=New-Object Windows.Forms.Form
 $script:form.Text='NovaStar VX400 · Control local'
-$script:form.ClientSize=New-Object Drawing.Size(1200,800)
+$script:form.ClientSize=New-Object Drawing.Size(1200,860)
 $script:form.MinimumSize=New-Object Drawing.Size(1050,700)
 $script:form.StartPosition='CenterScreen';$script:form.BackColor=$script:background
 $script:form.Font=New-Object Drawing.Font('Segoe UI',10)
@@ -520,7 +520,8 @@ $script:notice.AutoSize=$false;$script:notice.Dock='Fill';$script:notice.Padding
 $script:tabs=New-Object Windows.Forms.TabControl;$script:tabs.Dock='Fill';$script:tabs.Padding=New-Object Drawing.Point(23,11)
 $script:form.Controls.Add($script:tabs);$script:form.Controls.Add($footer);$script:form.Controls.Add($header)
 
-$statePage=New-Page 'Estado';$stateStack=New-Stack $statePage 6
+$statePage=New-Page 'Estado';$statePage.AutoScroll=$true;$stateStack=New-Stack $statePage 6
+$stateStack.Dock='Top';$stateStack.Height=610
 $actions=New-Flow
 $monitor=New-Button 'Iniciar monitor' $true;$monitor.Add_Click({Invoke-UiAction {Start-Controller $false}});$actions.Controls.Add($monitor)
 $control=New-Button 'Iniciar control';$control.Add_Click({Invoke-UiAction {Start-Controller $true}});$actions.Controls.Add($control)
@@ -535,7 +536,7 @@ $values=@()
 foreach($cardIndex in 0..3){
     $card=New-Object Windows.Forms.Panel;$card.Width=270;$card.Dock='Fill';$card.BackColor=[Drawing.Color]::White;$card.Margin=New-Object Windows.Forms.Padding(0,5,12,5);$card.Padding=New-Object Windows.Forms.Padding(14)
     $label=New-Label $cardTitles[$cardIndex] 9 $true;$label.Location=New-Object Drawing.Point(14,11);$card.Controls.Add($label)
-    $value=New-Label '—' 17 $true;$value.AutoSize=$false;$value.Location=New-Object Drawing.Point(14,43);$value.Size=New-Object Drawing.Size(238,45);$value.Anchor='Top,Left,Right';$card.Controls.Add($value);$values+=,$value
+    $value=New-Label '—' 15 $true;$value.AutoSize=$false;$value.Location=New-Object Drawing.Point(14,38);$value.Size=New-Object Drawing.Size(238,58);$value.Anchor='Top,Left,Right';$card.Controls.Add($value);$values+=,$value
     if($cardIndex -eq 1){$script:phaseDetail=New-Label 'Esperando al controlador' 9;$script:phaseDetail.Location=New-Object Drawing.Point(14,91);$card.Controls.Add($script:phaseDetail)}
     if($cardIndex -eq 2){$hint=New-Label 'No es una medición del panel' 9;$hint.Location=New-Object Drawing.Point(14,91);$card.Controls.Add($hint)}
     $cards.Controls.Add($card,$cardIndex,0)
@@ -569,9 +570,9 @@ foreach($pair in @(@('IP del equipo',$script:address),@('Puerto TCP',$script:por
 $script:powerVerified=New-Object Windows.Forms.CheckBox;$script:powerVerified.Text='Paneles y VX400 comparten alimentación';$script:powerVerified.AutoSize=$true;$script:powerVerified.Checked=$script:config.panelPowerCouplingVerified;$script:powerVerified.Margin=New-Object Windows.Forms.Padding(0,12,20,5)
 $script:startupVerified=New-Object Windows.Forms.CheckBox;$script:startupVerified.Text='Arranque en negro comprobado';$script:startupVerified.AutoSize=$true;$script:startupVerified.Checked=$script:config.startupProtectionVerified;$script:startupVerified.Margin=New-Object Windows.Forms.Padding(0,12,20,5)
 $settingsFlow.SetFlowBreak($fieldPanel,$true);$settingsFlow.Controls.Add($script:powerVerified);$settingsFlow.Controls.Add($script:startupVerified)
-Add-StackRow $stateStack $settings 4
+Add-StackRow $stateStack $settings 4 230
 $note=New-Label 'Monitor: consulta sin modificar el VX400. Control: ejecuta las secuencias guardadas. Una pérdida de comunicación no confirma un apagado eléctrico.' 9;$note.AutoSize=$false
-Add-StackRow $stateStack $note 5 36
+Add-StackRow $stateStack $note 5 43
 
 $schedulePage=New-Page 'Horarios';$scheduleStack=New-Stack $schedulePage 5
 $scheduleIntro=New-Label 'Encendido / apagado de video y brillo. No corta la alimentación eléctrica.' 15 $true
@@ -698,7 +699,7 @@ function Invoke-GuiSmoke {
             $null=[IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($ScreenshotPath))
             for($tabIndex=0;$tabIndex -lt $script:tabs.TabPages.Count;$tabIndex++){
                 $script:tabs.SelectedIndex=$tabIndex;$script:form.PerformLayout();[Windows.Forms.Application]::DoEvents()
-                $bitmap=New-Object Drawing.Bitmap($script:form.ClientSize.Width,$script:form.ClientSize.Height)
+                $bitmap=New-Object Drawing.Bitmap($script:form.Width,$script:form.Height)
                 try{$script:form.DrawToBitmap($bitmap,(New-Object Drawing.Rectangle(0,0,$bitmap.Width,$bitmap.Height)));$bitmap.Save((Join-Path $ScreenshotPath ('{0:00}-{1}.png' -f $tabIndex,@('Estado','Horarios','Secuencias','Solicitudes','Registro')[$tabIndex])),[Drawing.Imaging.ImageFormat]::Png)}finally{$bitmap.Dispose()}
             }
         }

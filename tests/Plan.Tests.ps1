@@ -16,7 +16,12 @@ try{
     $c=Read-VxPlanConfig (Join-Path $PSScriptRoot '../plan.config.json')
     Near (Get-VxProfileSeconds $c.profiles.dry) (188*60) dry188
     Near (Get-VxProfileSeconds $c.profiles.preheat) (240*60) preheat240
-    Near (Get-VxProfileSeconds $c.profiles.cooldown) (24*60) cooldown24
+    Near (Get-VxProfileSeconds $c.profiles.cooldown) (36*60) cooldown36
+    Near (Get-VxPlanLevel $c.profiles.cooldown (10*60)).brightnessPercent 65 cooldownfirsthalf
+    Near (Get-VxPlanLevel $c.profiles.cooldown (20*60)).brightnessPercent 50 cooldownboundary
+    Near (Get-VxPlanLevel $c.profiles.cooldown (28*60)).brightnessPercent 30 cooldownsecondhalf
+    Assert (-not (Get-VxPlanLevel $c.profiles.cooldown (35*60)).done) cooldownnotdone
+    Assert (Get-VxPlanLevel $c.profiles.cooldown (36*60)).done cooldowndone
     Near (Get-VxPlanLevel $c.profiles.dry 0).brightnessPercent 10 start
     Near (Get-VxPlanLevel $c.profiles.dry (12*60)).brightnessPercent 30 halfup
     Near (Get-VxPlanLevel $c.profiles.dry (24*60)).brightnessPercent 50 hold
@@ -45,7 +50,7 @@ try{
     foreach($actual in @(0,5,20,40,55,79.6)){
         $cool=Get-VxCooldownProfile $c.profiles.cooldown $actual
         $last=$actual
-        for($seconds=0;$seconds -le 1440;$seconds+=60){$value=(Get-VxPlanLevel $cool $seconds).brightnessPercent;Assert ($value -le $last+0.00001) partialcooldown;$last=$value}
+        for($seconds=0;$seconds -le (Get-VxProfileSeconds $cool);$seconds+=60){$value=(Get-VxPlanLevel $cool $seconds).brightnessPercent;Assert ($value -le $last+0.00001) partialcooldown;$last=$value}
     }
     $empty=Read-VxRequests (Join-Path $tmp absent.json);Assert ($empty -is [array] -and $empty.Count -eq 0) emptyarray
     $r=Request '2026-10-20T17:00:00Z' '2026-10-20T18:00:00Z'

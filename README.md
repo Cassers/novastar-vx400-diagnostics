@@ -20,10 +20,10 @@ El perfil inicial es la propuesta general compartida por el operador, cuyo orige
 |---|---|---|
 | Secado | 10→50%, mantener 50%, bajar por 30→15→10% | 188 min |
 | Preuso | 10→50%, mantener 50%, 50→80%, estabilizar 80% | 240 min |
-| Bajada | 80→50%, después 50→10% | 24 min |
+| Bajada | 80→50% en 20 min, después 50→10% en 16 min | 36 min |
 | Reposo | Salida negra, consigna de brillo 10% | Resto del tiempo |
 
-Se conservan los tiempos de la tabla: los secados iniciados a las 04:00 y 18:00 terminan a las **07:08 y 21:08**, respectivamente. El proceso no cabe en franjas de 150 minutos. La bajada conserva el punto del 15% de la tabla. Las rampas se interpolan en incrementos pequeños, limitados a los 256 niveles del protocolo; no se resume un tratamiento interrumpido a partir del reloj.
+Se conservan los tiempos de la tabla: los secados iniciados a las 04:00 y 18:00 terminan a las **07:08 y 21:08**, respectivamente. El proceso no cabe en franjas de 150 minutos. La bajada del secado conserva el punto del 15% de la tabla. El enfriamiento aplica los 20 + 16 minutos de la actualización recibida; prevalecen esas duraciones sobre los intervalos anteriores que siguen entre paréntesis en la tabla. Las rampas se interpolan en incrementos pequeños, limitados a los 256 niveles del protocolo; no se resume un tratamiento interrumpido a partir del reloj.
 
 El horario de uso indica cuándo debe estar disponible la imagen. El preuso empieza con la anticipación que requiera el perfil (cuatro horas inicialmente). Si el programa empieza tarde, completa la preparación antes de mostrar operación; no acorta fases para alcanzar la hora prevista. El fin de uso ejecuta la bajada y después reposo. Los horarios que cruzan medianoche están permitidos. Sin horario/solicitud activa ni secado programado, la pantalla queda en negro. Los horarios de uso se entregan vacíos para que el operador indique los del sitio.
 

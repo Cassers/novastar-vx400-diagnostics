@@ -4,7 +4,7 @@
 
 ## App nativa y plan v0.3.0
 
-- 200 aserciones puras del plan: tiempos 188/240/24 minutos, rampas fraccionarias, punto del 15%, zona Bogotá, medianoche, horarios semanales, solicitudes, cancelaciones y prioridad operación sobre preparación futura.
+- 277 aserciones puras del plan: tiempos 188/240/36 minutos, rampas fraccionarias, punto del 15%, zona Bogotá, medianoche, horarios semanales, solicitudes, cancelaciones y prioridad operación sobre preparación futura.
 - 12 escenarios de ciclo de vida contra TCP loopback: solo lectura, reposo fuera de horario, secado programado, preparación completa antes de operar, bajada tras fin/cancelación, respuestas perdidas, pregunta al operador, decisión pendiente conservada al reiniciar, rechazo de respuestas antiguas, suspensión del proceso y consumo de petición de parada.
 - 13 aserciones adicionales del generador de rampa del motor anterior, sin red. La plantilla de 70 minutos conserva niveles pendientes; no se usa como algoritmo térmico certificado.
 - La GUI dispone de smoke test Windows PowerShell 5.1/WinForms: guardado válido, rechazo sin corromper configuración, creación/cancelación/solapamiento de solicitudes, estado obsoleto y pregunta pendiente. Genera cinco capturas para revisión visual. Los stubs detectan cualquier arranque accidental del controlador o instalador.

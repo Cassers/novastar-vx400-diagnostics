@@ -1,5 +1,54 @@
 # Diagnóstico y monitor permanente del NovaStar VX400 original
 
+## App nativa Windows — v0.3.0
+
+Extrae el paquete completo y abre **`Abrir-Control-VX400.bat`**. Abre una ventana nativa de Windows, sin navegador ni servidor web. Requiere Windows PowerShell 5.1 y .NET Framework incluidos en Windows; no requiere Python ni paquetes adicionales para utilizarla. La conexión es Ethernet al puerto de control del VX400, TCP 5200.
+
+La app permite:
+
+- Ver comunicación, fase, progreso, tiempo restante y brillo solicitado. No se presenta el brillo como una medición óptica.
+- Editar IP, horarios semanales, horas de secado, brillo y duración de cada fase y su contenido: blanco o vídeo de entrada.
+- Crear y cancelar solicitudes de uso con el aviso necesario para completar el preuso; usa la zona de Bogotá por defecto.
+- Guardar la configuración, ejecutar solo monitorización o activar el control, e instalar/retirar el inicio automático de Windows.
+- Consultar los eventos y responder a una pérdida de comunicación desde la misma ventana.
+
+### Perfil provisional recibido
+
+El perfil inicial es la propuesta general compartida por el operador, cuyo origen se describió como una síntesis con IA. No se presenta como curva certificada del fabricante del panel. Los controles físicos de alimentación conjunta y arranque en negro deben comprobarse antes de habilitar escrituras.
+
+| Proceso | Fases | Duración |
+|---|---|---|
+| Secado | 10→50%, mantener 50%, bajar por 30→15→10% | 188 min |
+| Preuso | 10→50%, mantener 50%, 50→80%, estabilizar 80% | 240 min |
+| Bajada | 80→50%, después 50→10% | 24 min |
+| Reposo | Salida negra, consigna de brillo 10% | Resto del tiempo |
+
+Se conservan los tiempos de la tabla: los secados iniciados a las 04:00 y 18:00 terminan a las **07:08 y 21:08**, respectivamente. El proceso no cabe en franjas de 150 minutos. La bajada conserva el punto del 15% de la tabla. Las rampas se interpolan en incrementos pequeños, limitados a los 256 niveles del protocolo; no se resume un tratamiento interrumpido a partir del reloj.
+
+El horario de uso indica cuándo debe estar disponible la imagen. El preuso empieza con la anticipación que requiera el perfil (cuatro horas inicialmente). Si el programa empieza tarde, completa la preparación antes de mostrar operación; no acorta fases para alcanzar la hora prevista. El fin de uso ejecuta la bajada y después reposo. Los horarios que cruzan medianoche están permitidos. Sin horario/solicitud activa ni secado programado, la pantalla queda en negro. Los horarios de uso se entregan vacíos para que el operador indique los del sitio.
+
+El blanco está seleccionado para secado y las primeras fases de preuso; la rampa hacia operación y la estabilización utilizan el vídeo de entrada. Se puede cambiar por fase. Negro con consigna 10% no equivale a píxeles emitiendo al 10% ni demuestra mantenimiento térmico.
+
+### Reconexión con decisión del operador
+
+Una pérdida de comunicación interrumpe el avance. Cuando el VX400 vuelve a responder, la app muestra **«¿Iniciar preparación o dejar en reposo?»**. «Iniciar preparación» comienza el preuso completo desde el principio. «Dejar en reposo» conserva la pausa y permite decidir después. Si la ventana está cerrada, el controlador espera y muestra la decisión pendiente cuando se abra. Cerrar/reabrir la app, reiniciar el PC o cambiar a la instalación permanente no aprueba la decisión automáticamente.
+
+El evento significa pérdida/recuperación del protocolo, no confirmación de un corte eléctrico. El protocolo revisado no documenta historial de encendidos/apagados ni uptime; la app registra lo que observa el PC. Si los paneles se apagan dejando el VX400 encendido, este método no los detecta. Tampoco detecta necesariamente cortes más cortos que el sondeo. El horario controla imagen y brillo; no conecta ni corta alimentación AC.
+
+### Uso permanente y actualización
+
+Primero configura y guarda desde la ventana. «Iniciar monitor» solo consulta; «Iniciar control» habilita los comandos del plan y exige las comprobaciones de arranque indicadas. Para trabajar con una instalación del sistema o gestionar su inicio automático, Windows puede solicitar permisos de administrador.
+
+«Instalar al iniciar Windows» registra `NovaStar-VX400-Control` bajo SYSTEM. El motor sigue trabajando cuando se cierra la ventana y vuelve a arrancar con Windows. Configuración y código quedan en `%ProgramFiles%\NovaStar-VX400-Control`; datos, solicitudes y decisiones pendientes en `%ProgramData%\NovaStar-VX400-Control`. La app pasa a utilizar esas rutas después de instalar. La instalación inicial migra datos de una copia portátil detenida; una actualización no mezcla dos carpetas de datos distintas ni descarta decisiones pendientes.
+
+Para cambiar la configuración de un motor en marcha, pulsa «Detener», espera y guarda. La detención de una tarea instalada desactiva primero sus disparadores para evitar que el watchdog la vuelva a iniciar. Iniciar de nuevo actualiza/reactiva la tarea en el modo seleccionado. Retirar el inicio automático conserva los datos; puede restaurarse una instalación propia identificada sin borrarlos.
+
+Si antes se instaló el monitor v0.2.0 (`NovaStar-VX400-Watcher`), retira su tarea con `Quitar-Monitor-VX400.bat` antes de usar el nuevo controlador. El bloqueo por endpoint impide dos controladores simultáneos; no se desactiva una tarea desconocida por tener un nombre parecido.
+
+La app no cambia la suspensión, red, firewall, drivers ni firmware. Configura el PC para permanecer operativo y comprueba su recuperación tras cortes de energía. Los comandos de oscurecimiento son best effort: perder el PC/red puede impedirlos. La protección del primer fotograma y la aceptación térmica siguen requiriendo comprobación física.
+
+Pruebas y límites: [VALIDACION.md](VALIDACION.md). El diagnóstico y el monitor anteriores siguen incluidos abajo.
+
 ## Monitor automático por Ethernet — v0.2.0
 
 El paquete incluye diagnóstico puntual y un monitor para dejar en el PC del sitio. **Por defecto solo consulta y registra; no cambia el brillo.** El motor de etapas está implementado, pero la curva de producción no viene configurada: depende de los paneles y su puesta en marcha.
@@ -16,6 +65,8 @@ No deshabilita la suspensión de Windows: configura el PC del sitio para que per
 ### Habilitar una curva después de verificarla
 
 `sequence.stages` acepta una lista en orden de objetos con `brightnessPercent` y `durationSeconds`. Los brillos deben ser crecientes o iguales; las duraciones son mínimas y pueden prolongarse por sondeo/ACK. No se acortan etapas para recuperar tiempo perdido. `normalBrightnessPercent` determina el brillo del contenido al finalizar. `pattern` puede ser `White` o `FromInput`; este último depende del contenido de vídeo que reciba el VX400.
+
+El motor anterior también admite `sequence.ramp`: duración configurable, brillo inicial y pequeños intervalos hasta `normalBrightnessPercent`. Su plantilla de 70 minutos tiene los niveles pendientes y no reproduce el algoritmo interno de ViewSonic. Desactiva `ramp.enabled` para utilizar una lista explícita de etapas. La app nueva utiliza `plan.config.json` y sus fases; no mezcla ambos formatos.
 
 No hay valores térmicos de ejemplo en la configuración distribuida. Los perfiles cortos del simulador son exclusivamente pruebas de software y no deben copiarse a una pantalla. Los porcentajes se convierten al valor entero 0–255 redondeando hacia abajo; no son una medida de temperatura ni de humedad.
 

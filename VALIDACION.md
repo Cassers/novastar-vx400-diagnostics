@@ -2,6 +2,16 @@
 
 2026-10-20. Pruebas automatizadas ejecutadas exclusivamente en simuladores; la ejecución física del diagnóstico fue realizada por el operador del sitio, según captura recibida. El nuevo secuenciador no ha enviado escrituras a hardware real.
 
+## App nativa y plan v0.3.0
+
+- 200 aserciones puras del plan: tiempos 188/240/24 minutos, rampas fraccionarias, punto del 15%, zona Bogotá, medianoche, horarios semanales, solicitudes, cancelaciones y prioridad operación sobre preparación futura.
+- 12 escenarios de ciclo de vida contra TCP loopback: solo lectura, reposo fuera de horario, secado programado, preparación completa antes de operar, bajada tras fin/cancelación, respuestas perdidas, pregunta al operador, decisión pendiente conservada al reiniciar, rechazo de respuestas antiguas, suspensión del proceso y consumo de petición de parada.
+- 13 aserciones adicionales del generador de rampa del motor anterior, sin red. La plantilla de 70 minutos conserva niveles pendientes; no se usa como algoritmo térmico certificado.
+- La GUI dispone de smoke test Windows PowerShell 5.1/WinForms: guardado válido, rechazo sin corromper configuración, creación/cancelación/solapamiento de solicitudes, estado obsoleto y pregunta pendiente. Genera cinco capturas para revisión visual. Los stubs detectan cualquier arranque accidental del controlador o instalador.
+- Smoke test de instalación en runner Windows desechable: ACL privadas, SYSTEM, actualización propia, retirada/restauración y conservación/migración de decisión pendiente. No ejecuta escrituras contra un dispositivo real.
+- Revisión independiente entre autores de GUI y backend. Se corrigieron protección de tarea por ruta/acción, migración entre carpetas, recuperación sin bloquear por fallos esperables de ACK con equipo apagado, consumo de parada, prioridades y sobrecarga entera de Math.Min/Max en PowerShell.
+- Pendiente en sitio: comportamiento físico del equipo y paneles, permisos del PC real, primer fotograma, pruebas completas de alimentación y aceptación térmica del perfil provisional. No se instala ni controla nada en el PC remoto desde estas pruebas.
+
 ## Monitor/secuenciador v0.2.0
 
 - Pruebas locales PowerShell 7.6.7: monitor de solo lectura, pérdida/recuperación, orden y duración mínima de etapas, nuevo ciclo desde cero, ACK perdido, identidad distinta, perfil sin aprobar, curva descendente, protección inicial no verificada, fallo de disco, exclusión por endpoint y pausa entre lectura/transición.

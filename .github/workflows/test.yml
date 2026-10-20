@@ -10,6 +10,9 @@ jobs:
       - name: Windows PowerShell 5.1 protocol tests
         shell: powershell
         run: .\tests\Protocol.Tests.ps1
+      - name: Gradual-ramp planning without network
+        shell: powershell
+        run: .\tests\Ramp.Tests.ps1
       - name: Local fake VX400 integration tests
         shell: powershell
         run: python .\tests\runtime_tests.py
@@ -24,3 +27,22 @@ jobs:
       - name: Protected Windows scheduled-task installer
         shell: powershell
         run: .\tests\Installer.Tests.ps1
+      - name: Daily plan math and validation
+        shell: powershell
+        run: .\tests\Plan.Tests.ps1
+      - name: Plan lifecycle on local simulator only
+        shell: powershell
+        run: python .\tests\plan_runtime_tests.py
+      - name: Native Windows interface and screenshots
+        shell: powershell
+        run: .\tests\Gui.Tests.ps1
+      - name: Native control task installation and migration
+        shell: powershell
+        run: .\tests\ControlInstaller.Tests.ps1
+      - name: Native interface screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vx400-native-ui
+          path: ${{ runner.temp }}/vx400-gui
+          if-no-files-found: ignore

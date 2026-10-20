@@ -147,6 +147,37 @@ class PlanRuntimeTests(unittest.TestCase):
             self.assertFalse(self.state(directory)['operatorPending'])
             self.assertFalse(device.errors)
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows FILE_SHARE_DELETE regression')
+    def test_brief_windows_reader_lock_does_not_stop_state_publication(self):
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                      wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        kernel.CreateFileW.restype = wintypes.HANDLE
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+            path, _ = self.config(directory, device)
+            p = self.launch(directory, path, control=False, polls=100)
+            handle = None
+            try:
+                before = self.wait_state(p, directory, lambda s: s.get('communication') == 'reachable')['updatedUtc']
+                # Read/write sharing, deliberately excluding delete-sharing like ordinary Windows readers.
+                handle = kernel.CreateFileW(str(Path(directory)/'estado.json'), 0x80000000, 3, None, 3, 0, None)
+                self.assertNotEqual(handle, wintypes.HANDLE(-1).value, ctypes.get_last_error())
+                time.sleep(.35)
+                self.assertIsNone(p.poll(), 'A brief reader lock stopped the monitor')
+                kernel.CloseHandle(handle); handle = None
+                self.wait_state(p, directory, lambda s: s.get('updatedUtc') not in (None, before))
+                self.stop(directory); self.finish(p)
+                self.assertNotIn('process_fault', [e['event'] for e in self.events(directory)])
+                self.assertFalse(writes(device))
+            finally:
+                if handle not in (None, wintypes.HANDLE(-1).value): kernel.CloseHandle(handle)
+                if p.poll() is None:
+                    p.kill(); p.communicate()
+
     def test_control_outside_calendar_stays_black(self):
         with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
             path, _ = self.config(directory, device)

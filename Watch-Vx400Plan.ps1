@@ -31,7 +31,7 @@ function Save-PlanState {
     $script:status.updatedUtc=[DateTimeOffset]::UtcNow.ToString('o')
     $tmp=Join-Path $DataDirectory 'estado.json.tmp';$path=Join-Path $DataDirectory 'estado.json'
     [IO.File]::WriteAllText($tmp,($script:status|ConvertTo-Json -Depth 8),$utf8)
-    if([IO.File]::Exists($path)){[IO.File]::Replace($tmp,$path,[NullString]::Value)}else{[IO.File]::Move($tmp,$path)}
+    Move-VxAtomicFile -Source $tmp -Destination $path
 }
 function Write-PlanEvent([string]$Name,[string]$Detail) {
     $path=Join-Path $DataDirectory 'eventos.jsonl'
@@ -123,7 +123,7 @@ function Read-OperatorChoice {
     $path=Join-Path $DataDirectory 'operador.json'
     if(-not [IO.File]::Exists($path)){return ''}
     if((Get-Item -LiteralPath $path).Length -gt 8192){throw 'Operator command too large.'}
-    $json=Get-Content -LiteralPath $path -Raw -Encoding UTF8
+    $json=Read-VxSharedText -Path $path
     if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) {$command=ConvertFrom-Json -InputObject $json -DateKind String}else{$command=ConvertFrom-Json -InputObject $json}
     $fields=@($command.PSObject.Properties.Name)
     if($command -isnot [pscustomobject] -or $fields.Count -ne 4 -or @('id','gateId','action','utc'|Where-Object{$fields -notcontains $_}).Count -gt 0){throw 'Invalid operator command shape.'}
@@ -157,7 +157,7 @@ try {
     $previousPath=Join-Path $DataDirectory 'estado.json'
     if([IO.File]::Exists($previousPath)){
         if((Get-Item -LiteralPath $previousPath).Length -gt 1048576){throw 'Previous state too large.'}
-        $previous=Get-Content -LiteralPath $previousPath -Raw -Encoding UTF8|ConvertFrom-Json
+        $previous=Read-VxSharedText -Path $previousPath|ConvertFrom-Json
         if($null -ne $previous.PSObject.Properties['operatorPending'] -and $previous.operatorPending){
             $gate=[Guid]::Empty
             if($previous.operatorPending -isnot [bool] -or $previous.operatorGateId -isnot [string] -or -not [Guid]::TryParseExact($previous.operatorGateId,'D',[ref]$gate)){throw 'Invalid persisted operator gate.'}

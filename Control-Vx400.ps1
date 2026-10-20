@@ -161,8 +161,7 @@ function Write-ValidatedJson([string]$Path,$Document,[ValidateSet('config','requ
         [IO.File]::WriteAllText($temporary,($Document|ConvertTo-Json -Depth 20),(New-Object Text.UTF8Encoding($true)))
         if($Kind -eq 'config'){$null=Read-VxPlanConfig -Path $temporary}
         if($Kind -eq 'requests'){$null=Read-VxRequests -Path $temporary}
-        if([IO.File]::Exists($Path)){[IO.File]::Replace($temporary,$Path,[NullString]::Value)}
-        else{[IO.File]::Move($temporary,$Path)}
+        Move-VxAtomicFile -Source $temporary -Destination $Path
     } finally { if([IO.File]::Exists($temporary)){[IO.File]::Delete($temporary)} }
 }
 function Convert-GridNumber($Value,[string]$Field) {
@@ -354,7 +353,7 @@ function Request-Stop {
 }
 function Send-OperatorAnswer([ValidateSet('restart','hold')][string]$Action) {
     if($script:smoke){throw 'Respuestas deshabilitadas en SmokeTest.'}
-    $state=Get-Content -LiteralPath (Join-Path $script:dataDirectory 'estado.json') -Raw -Encoding UTF8|ConvertFrom-Json
+    $state=Read-VxSharedText -Path (Join-Path $script:dataDirectory 'estado.json')|ConvertFrom-Json
     $age=([DateTimeOffset]::UtcNow-[DateTimeOffset]$state.updatedUtc).TotalSeconds
     if($age -lt -5 -or $age -gt 10 -or (Get-Property $state communication) -ne 'reachable' -or -not (Get-Property $state operatorPending $false) -or [string](Get-Property $state operatorGateId) -ne $script:gateId) {
         throw 'La consulta ya cambió o no hay comunicación reciente. Espere una nueva actualización.'
@@ -433,7 +432,7 @@ function Update-Status {
     if([IO.File]::Exists($path)){
         try{
             if((Get-Item -LiteralPath $path).Length -gt 65536){throw 'Estado demasiado grande.'}
-            $script:state=Get-Content -LiteralPath $path -Raw -Encoding UTF8|ConvertFrom-Json
+            $script:state=Read-VxSharedText -Path $path|ConvertFrom-Json
             $age=([DateTimeOffset]::UtcNow-[DateTimeOffset]$script:state.updatedUtc).TotalSeconds
             $script:stateRecent=($age -ge -5 -and $age -le 10)
         }catch{$script:state=$null}

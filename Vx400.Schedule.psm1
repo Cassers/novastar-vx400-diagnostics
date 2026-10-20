@@ -1,6 +1,32 @@
 ﻿#requires -Version 5.1
 Set-StrictMode -Version Latest
 
+function Read-VxSharedText([string]$Path) {
+    # Readers permit atomic replacement while retaining a consistent open-file snapshot.
+    $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    try {
+        $reader=New-Object IO.StreamReader($stream,[Text.Encoding]::UTF8,$true)
+        try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
+    } finally { $stream.Dispose() }
+}
+function Move-VxAtomicFile([string]$Source,[string]$Destination) {
+    # Windows readers outside this app may briefly deny FILE_SHARE_DELETE.
+    # Retry only sharing/lock violations; disk, ACL and other failures remain fatal.
+    $retry=[Diagnostics.Stopwatch]::StartNew()
+    while($true) {
+        try {
+            if([IO.File]::Exists($Destination)){[IO.File]::Replace($Source,$Destination,[NullString]::Value)}
+            else{[IO.File]::Move($Source,$Destination)}
+            return
+        } catch {
+            $cause=$_.Exception.GetBaseException()
+            $code=$cause.HResult -band 65535
+            if($cause -isnot [IO.IOException] -or $code -notin @(32,33) -or $retry.ElapsedMilliseconds -ge 750){throw}
+            Start-Sleep -Milliseconds 25
+        }
+    }
+}
+
 function Assert-VxPlanObject($Value, [string[]]$Fields, [string]$Name) {
     if ($Value -isnot [pscustomobject]) { throw "$Name must be a JSON object." }
     $actual = @($Value.PSObject.Properties.Name)
@@ -49,7 +75,7 @@ function Read-VxPlanConfig {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Path, [switch]$EnableControl)
     if ((Get-Item -LiteralPath $Path).Length -gt 262144) { throw 'Config exceeds 256 KiB.' }
-    $config = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    $config = Read-VxSharedText -Path $Path | ConvertFrom-Json
     Assert-VxPlanObject $config @('schemaVersion','deviceAddress','tcpPort','pollIntervalSeconds','timeoutMs','offlineFailures','onlineSuccesses','maximumObservationGapSeconds','timeZone','profileAccepted','profileSource','panelPowerCouplingVerified','startupProtectionVerified','conditioningPattern','idleBrightnessPercent','operatingBrightnessPercent','dailyStarts','operatingWindows','profiles') 'config'
     Assert-VxPlanNumber $config.schemaVersion 1 1 schemaVersion -Integer
     $ip = $null
@@ -125,7 +151,7 @@ function Read-VxRequests {
     param([Parameter(Mandatory)][string]$Path)
     if (-not [IO.File]::Exists($Path)) { if(Test-Path -LiteralPath $Path){throw 'Requests path must be a regular file.'}; return ,@() }
     if ((Get-Item -LiteralPath $Path).Length -gt 1048576) { throw 'Requests exceed 1 MiB.' }
-    $json=Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    $json=Read-VxSharedText -Path $Path
     if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) { $document=ConvertFrom-Json -InputObject $json -DateKind String } else { $document=ConvertFrom-Json -InputObject $json }
     Assert-VxPlanObject $document @('schemaVersion','items') requests
     Assert-VxPlanNumber $document.schemaVersion 1 1 schemaVersion -Integer
@@ -216,4 +242,4 @@ function Get-VxOperatingRequests {
     for($i=1;$i -lt $sorted.Count;$i++){if([DateTimeOffset]$sorted[$i].startUtc -lt [DateTimeOffset]$sorted[$i-1].endUtc){throw 'Operating windows overlap.'}}
     return $sorted
 }
-Export-ModuleMember -Function Read-VxPlanConfig,Get-VxProfileSeconds,Get-VxPlanLevel,Read-VxRequests,Get-VxPlanDecision,Get-VxCooldownProfile,Get-VxOperatingRequests
+Export-ModuleMember -Function Read-VxSharedText,Move-VxAtomicFile,Read-VxPlanConfig,Get-VxProfileSeconds,Get-VxPlanLevel,Read-VxRequests,Get-VxPlanDecision,Get-VxCooldownProfile,Get-VxOperatingRequests

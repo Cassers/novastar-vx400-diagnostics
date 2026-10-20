@@ -1,0 +1,18 @@
+name: Windows diagnostics tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Windows PowerShell 5.1 protocol tests
+        shell: powershell
+        run: .\tests\Protocol.Tests.ps1
+      - name: Local fake VX400 integration tests
+        shell: powershell
+        run: python .\tests\runtime_tests.py
+      - name: Hardware-view fallback without NovaLCT
+        shell: powershell
+        run: .\Test-Vx400.ps1 -InventoryOnly -CaptureNovaLctHardwareInfo -AssumeLatestFirmware -OutputDirectory "$env:RUNNER_TEMP\vx400-inventory"

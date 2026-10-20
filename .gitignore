@@ -1,0 +1,5 @@
+reports/
+hardware*.txt
+*.log
+__pycache__/
+*.zip

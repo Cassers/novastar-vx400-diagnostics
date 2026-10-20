@@ -1,14 +1,16 @@
 ﻿#requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string]$ConfigPath = (Join-Path $PSScriptRoot 'watcher.config.json'),
-    [string]$DataDirectory = (Join-Path $PSScriptRoot 'watcher-data'),
+    [string]$ConfigPath = '',
+    [string]$DataDirectory = '',
     [switch]$EnableSequence,
     [switch]$ValidateOnly,
     [ValidateRange(0,1000000)][int]$MaxPolls = 0
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($ConfigPath)) { $ConfigPath = Join-Path $PSScriptRoot 'watcher.config.json' }
+if ([string]::IsNullOrWhiteSpace($DataDirectory)) { $DataDirectory = Join-Path $PSScriptRoot 'watcher-data' }
 Import-Module (Join-Path $PSScriptRoot 'Vx400.Automation.psm1') -Force
 try {
     $config = Read-VxWatcherConfig -Path $ConfigPath -EnableSequence:$EnableSequence

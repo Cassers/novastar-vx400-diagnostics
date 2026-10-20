@@ -1,13 +1,16 @@
 ﻿#requires -Version 5.1
 [CmdletBinding(DefaultParameterSetName = 'Install')]
 param(
-    [Parameter(ParameterSetName = 'Install')][string]$ConfigPath = (Join-Path $PSScriptRoot 'watcher.config.json'),
+    [Parameter(ParameterSetName = 'Install')][string]$ConfigPath = '',
     [Parameter(ParameterSetName = 'Install')][switch]$EnableSequence,
     [Parameter(ParameterSetName = 'Install')][switch]$StartNow,
     [Parameter(Mandatory = $true, ParameterSetName = 'Remove')][switch]$Remove
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if (-not $Remove -and [string]::IsNullOrWhiteSpace($ConfigPath)) {
+    $ConfigPath = Join-Path $PSScriptRoot 'watcher.config.json'
+}
 
 function Assert-NoReparsePoint([string]$Path) {
     $cursor = [System.IO.Path]::GetFullPath($Path)

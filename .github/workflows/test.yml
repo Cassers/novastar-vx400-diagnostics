@@ -18,7 +18,9 @@ jobs:
         run: .\Test-Vx400.ps1 -InventoryOnly -CaptureNovaLctHardwareInfo -AssumeLatestFirmware -OutputDirectory "$env:RUNNER_TEMP\vx400-inventory"
       - name: Watcher against local fake VX400 only
         shell: powershell
-        run: python .\tests\watcher_tests.py
+        run: |
+          .\Watch-Vx400.ps1 -ValidateOnly
+          python .\tests\watcher_tests.py
       - name: Protected Windows scheduled-task installer
         shell: powershell
         run: .\tests\Installer.Tests.ps1

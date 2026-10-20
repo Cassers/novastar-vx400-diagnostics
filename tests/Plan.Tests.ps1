@@ -67,6 +67,11 @@ try{
     Throws {Read-VxPlanConfig (Join-Path $PSScriptRoot '../plan.config.json') -EnableControl} powergates
     $c=Copy-Config;$c.panelPowerCouplingVerified=$true;$c.startupProtectionVerified=$true;$path=Write-Json $c
     $null=Read-VxPlanConfig $path -EnableControl;Assert $true genericaccepted
+    $manual=Read-VxPlanConfig (Join-Path $PSScriptRoot '../plan.config.json') -EnableControl -ManualControl
+    Assert (-not $manual.panelPowerCouplingVerified -and -not $manual.startupProtectionVerified) manualdoesnotfalsifychecks
+    Throws {Read-VxPlanConfig (Join-Path $PSScriptRoot '../plan.config.json') -ManualControl} manualrequirescontrol
+    $manual.profileAccepted=$false;$manualPath=Write-Json $manual
+    Throws {Read-VxPlanConfig $manualPath -EnableControl -ManualControl} manualprofilestillrequired
     foreach($bad in @('127.1','localhost','224.0.0.1','192.168.000.1')){$c=Copy-Config;$c.deviceAddress=$bad;$path=Write-Json $c;Throws {Read-VxPlanConfig $path} canonicalipv4}
     $c=Copy-Config;$c.tcpPort='5200';$path=Write-Json $c;Throws {Read-VxPlanConfig $path} stricttype
     $c=Copy-Config;$c.profiles.dry[1].from=49;$path=Write-Json $c;Throws {Read-VxPlanConfig $path} continuous

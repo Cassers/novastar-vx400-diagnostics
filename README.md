@@ -1,6 +1,6 @@
 # Diagnóstico y monitor permanente del NovaStar VX400 original
 
-## App nativa Windows — v0.3.0
+## App nativa Windows — v0.4.0
 
 Extrae el paquete completo y abre **`Abrir-Control-VX400.bat`**. Abre una ventana nativa de Windows, sin navegador ni servidor web. Requiere Windows PowerShell 5.1 y .NET Framework incluidos en Windows; no requiere Python ni paquetes adicionales para utilizarla. La conexión es Ethernet al puerto de control del VX400, TCP 5200.
 
@@ -11,6 +11,16 @@ La app permite:
 - Crear y cancelar solicitudes de uso con el aviso necesario para completar el preuso; usa la zona de Bogotá por defecto.
 - Guardar la configuración, ejecutar solo monitorización o activar el control, e instalar/retirar el inicio automático de Windows.
 - Consultar los eventos y responder a una pérdida de comunicación desde la misma ventana.
+
+### Control manual y prueba de secado
+
+En **Control manual** puede ajustar brillo 0–100%, mostrar entrada de vídeo, negro o blanco de prueba. El valor inicial es 10%; cada mando verifica el ModelID y confirma Blackout → brillo → contenido. El resultado es una consigna con ACK, no una medición óptica. La salida elegida se mantiene después del mando.
+
+Fuera de una secuencia, aplicar un mando solicita una pausa al motor y desactiva temporalmente su inicio automático. El propio motor rechaza la pausa durante secado, preuso o enfriamiento: una vista atrasada de la GUI no permite cambiar el brillo en medio de la rampa. Use **Iniciar monitor** o **Iniciar control** para regresar al modo correspondiente; el control automático conserva sus verificaciones de instalación.
+
+Para una prueba manual del secado: pulse **Detener**, espere y elija **Iniciar secado manual** en Control manual o Secuencias. Ejecuta una sola vez el perfil DRY completo (188 minutos inicialmente), sin crear reservas ni modificar horarios. Empieza desde el nivel inicial configurado; al completar confirma negro y reposo y termina. Cualquier lectura fallida, desconexión, pausa del proceso o fallo de ACK cancela la prueba y conserva una decisión pendiente; no arranca otra vez por recuperar red. Un nuevo clic explícito inicia de nuevo el perfil completo. **Detener** intenta Blackout/cero y termina la prueba.
+
+Este modo es supervisado y explícito: no exige declarar alimentación conjunta ni arranque en negro del calendario automático, y tampoco marca esas casillas por su cuenta. Conserva la aceptación del perfil provisional. No comprime la curva para simular un tratamiento físico en pocos minutos ni certifica que haya eliminado humedad. La app no conmuta la corriente eléctrica de los paneles.
 
 ### Perfil provisional recibido
 

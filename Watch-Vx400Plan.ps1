@@ -1,21 +1,24 @@
 ﻿#requires -Version 5.1
 [CmdletBinding()]
 param([string]$ConfigPath='', [string]$DataDirectory='', [switch]$EnableControl,
-      [switch]$ValidateOnly, [ValidateRange(0,1000000)][int]$MaxPolls=0)
+      [switch]$ValidateOnly, [switch]$ManualDry, [ValidateRange(0,1000000)][int]$MaxPolls=0)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 if ([string]::IsNullOrWhiteSpace($ConfigPath)) {$ConfigPath=Join-Path $PSScriptRoot 'plan.config.json'}
 if ([string]::IsNullOrWhiteSpace($DataDirectory)) {$DataDirectory=Join-Path $PSScriptRoot 'plan-data'}
 Import-Module (Join-Path $PSScriptRoot 'Vx400.Schedule.psm1') -Force
-try {$config=Read-VxPlanConfig -Path $ConfigPath -EnableControl:$EnableControl}
+try {
+    if($ManualDry -and -not $EnableControl){throw 'ManualDry requires explicit EnableControl.'}
+    $config=Read-VxPlanConfig -Path $ConfigPath -EnableControl:$EnableControl -ManualControl:$ManualDry
+}
 catch {Write-Error $_ -ErrorAction Continue; exit 2}
 if ($ValidateOnly) {Write-Output ('Plan valid. '+$(if($EnableControl){'CONTROL'}else{'MONITOR (read only)'}));exit 0}
 Import-Module (Join-Path $PSScriptRoot 'Vx400.Protocol.psm1') -Force
 $utf8=New-Object Text.UTF8Encoding($false)
 $script:status=[ordered]@{
-    schemaVersion=1;mode=$(if($EnableControl){'control'}else{'monitor'});state='BOOT';communication='unknown'
+    schemaVersion=1;mode=$(if($EnableControl){'control'}else{'monitor'});execution=$(if($ManualDry){'manual-dry'}else{'scheduled'});state='BOOT';communication='unknown'
     brightnessRequested=$null;phase=$null;progressPercent=0;remainingSeconds=0;profileKey='';updatedUtc=$null
-    lastSuccessfulReadUtc=$null;lastEvent=$null;operatorPending=$false;operatorGateId=$null;operatorMessage='';operatorLastCommandId=$null;operatorConsumedCommandIds=@()
+    lastSuccessfulReadUtc=$null;lastEvent=$null;manualPauseRejectedId='';operatorPending=$false;operatorGateId=$null;operatorMessage='';operatorLastCommandId=$null;operatorConsumedCommandIds=@()
     deviceAddress=$config.deviceAddress;tcpPort=$config.tcpPort
 }
 $mutex=$null;$ownsMutex=$false;$fileLock=$null;$exitCode=0
@@ -26,6 +29,7 @@ $script:brightnessByte=-1;$script:pattern='unknown'
 $script:activeMode='';$script:activeKey='';$script:profile=@();$script:profileStart=0.0
 $script:activeRequest=$null;$script:operatorForced=$false;$script:ready=$false
 $script:completed=@();$script:needInitialDry=$false
+$script:manualStarted=$false;$script:manualCompleted=$false
 
 function Save-PlanState {
     $script:status.updatedUtc=[DateTimeOffset]::UtcNow.ToString('o')
@@ -104,6 +108,29 @@ function Start-PlanProfile([string]$Mode,[string]$Key,[object[]]$Profile,$Reques
     $script:activeMode=$Mode;$script:activeKey=$Key;$script:profile=$Profile;$script:activeRequest=$Request
     $script:operatorForced=[bool]$OperatorRestart;$script:ready=$false;$script:profileStart=$clock.Elapsed.TotalSeconds
 }
+function Invoke-ManualDryTick {
+    if(-not $script:manualStarted){
+        # A new interactive launch is an explicit operator choice; no task persists this switch.
+        $script:status.operatorPending=$false
+        $script:status.operatorMessage='Secado manual solicitado por operador.'
+        Write-PlanEvent 'manual_dry_requested' 'One supervised dry cycle; calendar ignored; any lost read cancels; no automatic restart.'
+        Start-PlanProfile 'DRY' ('manual:'+ [Guid]::NewGuid().ToString()) $config.profiles.dry $null
+        $script:manualStarted=$true
+    }
+    $elapsed=$clock.Elapsed.TotalSeconds-$script:profileStart
+    $level=Get-VxPlanLevel -Profile $script:profile -ElapsedSeconds $elapsed -DefaultContent $config.conditioningPattern
+    Set-PlanContent $level.content $level.brightnessPercent
+    if($script:status.phase -ne $level.phase){$script:status.phase=$level.phase;Write-PlanEvent 'phase' $level.phase}
+    $total=Get-VxProfileSeconds $script:profile
+    $script:status.progressPercent=[Math]::Min([double]100,100*$elapsed/$total)
+    $script:status.remainingSeconds=[Math]::Max([double]0,$total-$elapsed)
+    if($level.done){
+        Set-PlanBlack
+        Write-PlanEvent 'manual_dry_completed' 'Full configured dry profile completed; Blackout and idle level acknowledged.'
+        $script:manualCompleted=$true
+    }
+}
+
 function Reset-PlanProgress {
     $script:activeMode='';$script:activeKey='';$script:activeRequest=$null;$script:operatorForced=$false;$script:ready=$false
     $script:status.phase=$null;$script:status.profileKey='';$script:status.progressPercent=0;$script:status.remainingSeconds=0
@@ -176,16 +203,36 @@ try {
     $failures=0;$successes=0;$polls=0;$lastLoop=0.0;$lastUtc=[DateTimeOffset]::UtcNow
     while($MaxPolls -eq 0 -or $polls -lt $MaxPolls){
         if([IO.File]::Exists((Join-Path $DataDirectory 'stop.request'))){Write-PlanEvent 'stop_requested' 'Operator requested graceful stop.';Remove-Item -LiteralPath (Join-Path $DataDirectory 'stop.request') -ErrorAction Stop;break}
+        $pausePath=Join-Path $DataDirectory 'manual-pause.request'
+        if([IO.File]::Exists($pausePath)){
+            $pauseId=$null
+            try{$pauseId=(Read-VxSharedText $pausePath).Trim();[IO.File]::Delete($pausePath)}
+            catch{if($_.Exception.GetBaseException() -isnot [IO.FileNotFoundException]){throw}}
+            $parsedPause=[Guid]::Empty
+            if($null -eq $pauseId){ }
+            elseif(-not [Guid]::TryParseExact($pauseId,'D',[ref]$parsedPause)){Write-PlanEvent 'manual_pause_invalid' 'Ignored invalid manual handoff request.'}
+            elseif($ManualDry -or $script:activeMode -in @('DRY','PREHEAT','COOLDOWN')){
+                $script:status.manualPauseRejectedId=$pauseId
+                Write-PlanEvent 'manual_pause_rejected' 'A sequence is active; manual brightness cannot interrupt it.'
+            }else{
+                Write-PlanEvent 'manual_pause_accepted' 'Operator selected manual control; scheduled motor paused.'
+                break
+            }
+        }
         $polls++
         $delta=$clock.Elapsed.TotalSeconds-$lastLoop;$wall=([DateTimeOffset]::UtcNow-$lastUtc).TotalSeconds
         if($delta -gt $config.maximumObservationGapSeconds -or [Math]::Abs($wall-$delta) -gt $config.maximumObservationGapSeconds){
             $connected=$false;$successes=0;$failures=0;$offlineMarked=$false
             $script:status.communication='unknown'
             Open-OperatorGate 'Process suspension/clock gap: elapsed progress discarded.';$lossEpisode=$true
+            if($ManualDry){throw 'Manual dry cancelled after observation gap; explicit new launch required.'}
         }
         # Invalid/missing-after-creation files fail closed; only absence of requests is empty.
-        $requests=Read-VxRequests -Path (Join-Path $DataDirectory 'solicitudes.json')
-        $decision=Get-VxPlanDecision -Config $config -Requests $requests -NowUtc ([DateTimeOffset]::UtcNow) -CompletedDryKeys $script:completed
+        if($ManualDry){$decision=[pscustomobject]@{mode='BLACK';key='';request=$null}}
+        else{
+            $requests=Read-VxRequests -Path (Join-Path $DataDirectory 'solicitudes.json')
+            $decision=Get-VxPlanDecision -Config $config -Requests $requests -NowUtc ([DateTimeOffset]::UtcNow) -CompletedDryKeys $script:completed
+        }
         $readError=$null
         try{
             $reply=Exchange-Plan (New-VxReadRequest -Address 2 -Length 2 -Sequence (Next-Sequence))
@@ -194,6 +241,7 @@ try {
             $script:status.lastSuccessfulReadUtc=$script:lastReadUtc.ToString('o')
         }catch{$readError=$_.Exception.Message}
         if($null -ne $readError){
+            if($ManualDry){Open-OperatorGate ('Manual dry interrupted: '+$readError);throw 'Manual dry cancelled after read failure; explicit new launch required.'}
             $successes=0;$failures++;$connected=$false
             if(-not $lossEpisode){
                 $lossEpisode=$true;$script:status.communication='uncertain'
@@ -207,11 +255,18 @@ try {
                 $event=if($everConnected){'reconnected'}else{'connected'};$everConnected=$true
                 $script:needInitialDry=$false
                 Write-PlanEvent $event 'Stable valid ModelID reads.'
-                if($EnableControl -and $script:status.operatorPending){Try-PlanDark}
+                if($EnableControl -and $script:status.operatorPending -and -not $ManualDry){Try-PlanDark}
             }
             if($connected){
                 if(-not $EnableControl){
                     if($script:status.state -ne $decision.mode -or $script:status.profileKey -ne $decision.key){$script:status.state=$decision.mode;$script:status.profileKey=$decision.key;Write-PlanEvent 'desired_plan' ('Monitor only: '+$decision.mode+' '+$decision.key)}
+                }elseif($ManualDry){
+                    try{
+                        Invoke-ManualDryTick
+                        if($script:manualCompleted){break}
+                    }catch{
+                        $script:fault=$true;Open-OperatorGate ('Manual dry stopped: '+$_.Exception.Message);throw
+                    }
                 }elseif($script:fault){
                     if($script:status.state -ne 'FAULT'){$script:status.state='FAULT';Write-PlanEvent 'write_fault' 'Uncertain write. Process restart and operator inspection required.'}
                 }else{
@@ -272,6 +327,15 @@ try {
             }
         }
         Save-PlanState
+        # A suspend may occur after publishing BLACK and before resetting loop timestamps.
+        if($null -eq $readError){
+            $readAge=([Diagnostics.Stopwatch]::GetTimestamp()-$script:lastReadStamp)/[double][Diagnostics.Stopwatch]::Frequency
+            if($readAge -gt $config.maximumObservationGapSeconds -or [Math]::Abs(([DateTimeOffset]::UtcNow-$script:lastReadUtc).TotalSeconds-$readAge) -gt $config.maximumObservationGapSeconds){
+                $connected=$false;$successes=0;$failures=0;$offlineMarked=$false;$lossEpisode=$true;$script:status.communication='unknown'
+                Open-OperatorGate 'Observation gap after state publication; elapsed progress discarded.'
+                if($ManualDry){throw 'Manual dry cancelled after observation gap; explicit new launch required.'}
+            }
+        }
         $lastLoop=$clock.Elapsed.TotalSeconds;$lastUtc=[DateTimeOffset]::UtcNow
         if($MaxPolls -eq 0 -or $polls -lt $MaxPolls){
             $sleep=[Diagnostics.Stopwatch]::StartNew()
@@ -291,10 +355,10 @@ try {
 }finally{
     # Forced process/PC termination can bypass finally. Physical startup blackout is essential.
     if($ownsMutex -and $null -ne $fileLock){
-        if($EnableControl -and $script:trusted){Try-PlanDark}
+        if($EnableControl -and $script:trusted -and -not ($ManualDry -and $script:manualCompleted -and $exitCode -eq 0)){Try-PlanDark}
         if($script:fault){$exitCode=2}
         if($exitCode -eq 0){$script:status.state='STOPPED'}
-        try{Write-PlanEvent 'stopped' 'Best-effort Blackout/zero on normal exit; progress is never resumed.'}catch{$exitCode=2}
+        try{Write-PlanEvent 'stopped' $(if($ManualDry -and $script:manualCompleted){'Manual dry completed; acknowledged Blackout/idle retained.'}else{'Best-effort Blackout/zero on normal exit; progress is never resumed.'})}catch{$exitCode=2}
         $fileLock.Dispose()
     }
     if($ownsMutex){$mutex.ReleaseMutex()};if($null -ne $mutex){$mutex.Dispose()}

@@ -73,7 +73,8 @@ function Get-VxPlanLevel {
 }
 function Read-VxPlanConfig {
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$Path, [switch]$EnableControl)
+    param([Parameter(Mandatory)][string]$Path, [switch]$EnableControl, [switch]$ManualControl)
+    if($ManualControl -and -not $EnableControl){throw 'ManualControl requires EnableControl.'}
     if ((Get-Item -LiteralPath $Path).Length -gt 262144) { throw 'Config exceeds 256 KiB.' }
     $config = Read-VxSharedText -Path $Path | ConvertFrom-Json
     Assert-VxPlanObject $config @('schemaVersion','deviceAddress','tcpPort','pollIntervalSeconds','timeoutMs','offlineFailures','onlineSuccesses','maximumObservationGapSeconds','timeZone','profileAccepted','profileSource','panelPowerCouplingVerified','startupProtectionVerified','conditioningPattern','idleBrightnessPercent','operatingBrightnessPercent','dailyStarts','operatingWindows','profiles') 'config'
@@ -93,7 +94,7 @@ function Read-VxPlanConfig {
     $null = Resolve-VxPlanTimeZone $config.timeZone
     foreach ($field in @('profileAccepted','panelPowerCouplingVerified','startupProtectionVerified')) {
         if ($config.$field -isnot [bool]) { throw "$field must be boolean." }
-        if ($EnableControl -and -not $config.$field) { throw "Control blocked: $field must be true." }
+        if ($EnableControl -and -not $config.$field -and ($field -eq 'profileAccepted' -or -not $ManualControl)) { throw "Control blocked: $field must be true." }
     }
     if ($config.profileSource -isnot [string] -or [string]::IsNullOrWhiteSpace($config.profileSource) -or $config.profileSource.Length -gt 1024) { throw 'profileSource required, maximum 1024 characters.' }
     if ($config.conditioningPattern -isnot [string] -or $config.conditioningPattern -cnotin @('White','FromInput')) { throw 'conditioningPattern must be White or FromInput.' }

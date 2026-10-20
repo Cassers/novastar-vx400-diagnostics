@@ -3,7 +3,7 @@
   "deviceAddress": "192.168.0.10",
   "tcpPort": 5200,
   "pollIntervalSeconds": 2,
-  "timeoutMs": 1500,
+  "timeoutMs": 5000,
   "offlineFailures": 3,
   "onlineSuccesses": 2,
   "maximumObservationGapSeconds": 30,

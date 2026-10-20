@@ -2,13 +2,14 @@
 
 2026-10-20. Pruebas automatizadas ejecutadas exclusivamente en simuladores; la ejecución física del diagnóstico fue realizada por el operador del sitio, según captura recibida. El nuevo secuenciador no ha enviado escrituras a hardware real.
 
-## App nativa y plan v0.3.0
+## App nativa y plan v0.4.0
 
-- 277 aserciones puras del plan: tiempos 188/240/36 minutos, rampas fraccionarias, punto del 15%, zona Bogotá, medianoche, horarios semanales, solicitudes, cancelaciones y prioridad operación sobre preparación futura.
-- 13 escenarios definidos de ciclo de vida contra TCP loopback (uno específico de Windows y uno de Unix): solo lectura, reposo fuera de horario, secado programado, preparación completa antes de operar, bajada tras fin/cancelación, respuestas perdidas, pregunta al operador, decisión pendiente conservada al reiniciar, rechazo de respuestas antiguas, suspensión del proceso y consumo de petición de parada y lectura concurrente del estado en Windows.
+- 280 aserciones puras del plan: tiempos 188/240/36 minutos, rampas fraccionarias, punto del 15%, zona Bogotá, medianoche, horarios semanales, solicitudes, cancelaciones y prioridad operación sobre preparación futura.
+- 21 escenarios definidos de ciclo de vida contra TCP loopback (uno específico de Windows y uno de Unix): solo lectura, reposo fuera de horario, secado programado, preparación completa antes de operar, bajada tras fin/cancelación, respuestas perdidas, pregunta al operador, decisión pendiente conservada al reiniciar, rechazo de respuestas antiguas, suspensión del proceso y consumo de petición de parada y lectura concurrente del estado en Windows.
 - 13 aserciones adicionales del generador de rampa del motor anterior, sin red. La plantilla de 70 minutos conserva niveles pendientes; no se usa como algoritmo térmico certificado.
-- La GUI dispone de smoke test Windows PowerShell 5.1/WinForms: guardado válido, rechazo sin corromper configuración, creación/cancelación/solapamiento de solicitudes, estado obsoleto y pregunta pendiente. Genera cinco capturas para revisión visual. Los stubs detectan cualquier arranque accidental del controlador o instalador.
+- La GUI dispone de smoke test Windows PowerShell 5.1/WinForms: guardado válido, rechazo sin corromper configuración, creación/cancelación/solapamiento de solicitudes, estado obsoleto y pregunta pendiente. Genera seis capturas para revisión visual. Los stubs detectan cualquier arranque accidental del controlador o instalador.
 - Smoke test de instalación en runner Windows desechable: ACL privadas, SYSTEM, actualización propia, retirada/restauración y conservación/migración de decisión pendiente. No ejecuta escrituras contra un dispositivo real.
+- Nuevas regresiones de mandos manuales: ACK de brillo antes de contenido, ACK perdido sin habilitar blanco/entrada, exclusión por endpoint, secado manual de una ejecución, cancelación sin reinicio y rechazo de cambio de brillo durante secado.
 - Revisión independiente entre autores de GUI y backend. Se corrigieron protección de tarea por ruta/acción, migración entre carpetas, recuperación sin bloquear por fallos esperables de ACK con equipo apagado, consumo de parada, prioridades y sobrecarga entera de Math.Min/Max en PowerShell.
 - Pendiente en sitio: comportamiento físico del equipo y paneles, permisos del PC real, primer fotograma, pruebas completas de alimentación y aceptación térmica del perfil provisional. No se instala ni controla nada en el PC remoto desde estas pruebas.
 

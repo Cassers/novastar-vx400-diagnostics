@@ -15,7 +15,7 @@ El plan aplica la propuesta general compartida por el operador, de origen no cer
 
 `plan.config.json` requiere `schemaVersion: 1`, IPv4 canónica, puerto, tiempos de sondeo y los perfiles completos. No hay instalación de dependencias. Windows PowerShell 5.1; las pruebas de desarrollo también usan PowerShell 7 en Linux.
 
-Por defecto: `192.168.0.10:5200`, consulta cada 2 segundos, timeout 1500 ms, tres fallos para declarar inaccesible y dos respuestas correctas para conexión estable. Un solo fallo descarta el progreso; el umbral de tres solo afecta el aviso. Las zonas `SA Pacific Standard Time` y `America/Bogota` se resuelven según el sistema.
+Por defecto: `192.168.0.10:5200`, consulta cada 2 segundos, timeout 5000 ms, tres fallos para declarar inaccesible y dos respuestas correctas para conexión estable. Un solo fallo descarta el progreso; el umbral de tres solo afecta el aviso. Las zonas `SA Pacific Standard Time` y `America/Bogota` se resuelven según el sistema.
 
 | Perfil | Recorrido | Duración |
 |---|---|---|
@@ -103,3 +103,11 @@ Rollback de esta unidad: retirar los dos archivos PowerShell, `plan.config.json`
 Evidencia local de esta unidad (2026-10-20): pruebas puras del plan, 13 escenarios TCP de loopback definidos (uno específico de cada sistema) y análisis sintáctico de los tres archivos PowerShell aprobados en PowerShell 7.6.7/Linux. Los escenarios incluyen suspensión del proceso, mantenimiento de pregunta tras reinicio y pérdida de ACK de brillo. La prueba SIGSTOP/SIGCONT se omite en Windows porque esa señal no existe allí; su equivalente de suspensión requiere comprobación específica de Windows. La validación de GUI, tarea SYSTEM, ACL y compatibilidad 5.1 corresponde a la integración Windows del paquete.
 
 Los lectores propios de JSON permiten sustitución atómica (`FileShare.ReadWrite | Delete`). La publicación reintenta hasta 750 ms únicamente errores Windows de sharing/lock (32/33), para tolerar lectores externos breves; errores de permisos/disco siguen provocando parada. La regresión de Windows retiene un lector durante 350 ms y comprueba continuidad del monitor sin escrituras de hardware.
+
+## Operación manual v0.4.0
+
+`Watch-Vx400Plan.ps1 -ManualDry -EnableControl` ejecuta una sola curva DRY sin calendario. `Read-VxPlanConfig -EnableControl -ManualControl` mantiene validación y aceptación del perfil y exime únicamente las declaraciones de alimentación/arranque del modo automático. No modifica esas declaraciones. El modo manual cancela ante cualquier lectura perdida o gap y nunca se registra en una tarea de inicio. El último negro/reposo confirmado se mantiene tras finalizar correctamente.
+
+`Set-Vx400Manual.ps1 -EnableControl -BrightnessPercent 10 -Display White` es un mando explícito: valida identidad, toma el mutex del endpoint y lock de datos, confirma negro, brillo y contenido. Ante un ACK perdido intenta negro/cero; no muestra contenido con brillo incierto. Registra el ACK como consigna sin afirmar medición. No ejecuta calendarios ni limpia una decisión pendiente de operación automática.
+
+`manual-pause.request` contiene un GUID y se consume dentro del loop del motor. DRY/PREHEAT/COOLDOWN rechazan la pausa publicando `manualPauseRejectedId`; el resto permite salir antes de iniciar nuevas fases. La GUI espera la salida y el mutex antes de enviar el mando y pausa el watchdog; si la fase comenzó entre la lectura de estado y la solicitud, el rechazo mantiene el proceso y restaura la tarea que estaba habilitada. Una solicitud expirada se retira sin enviar comandos.

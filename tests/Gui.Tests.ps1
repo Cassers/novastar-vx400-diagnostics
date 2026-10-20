@@ -23,6 +23,7 @@ try{
     $stub="[IO.File]::WriteAllText('$($sentinel.Replace("'","''"))','Unexpected launch'); exit 97"
     [IO.File]::WriteAllText((Join-Path $fixture 'Watch-Vx400Plan.ps1'),$stub,(New-Object Text.UTF8Encoding($true)))
     [IO.File]::WriteAllText((Join-Path $fixture 'Install-Vx400Control.ps1'),$stub,(New-Object Text.UTF8Encoding($true)))
+    [IO.File]::WriteAllText((Join-Path $fixture 'Set-Vx400Manual.ps1'),$stub,(New-Object Text.UTF8Encoding($true)))
     $config=Join-Path $fixture 'plan.config.json'
     $data=Join-Path $fixture 'never-write-real-data'
     $before=(Get-FileHash -LiteralPath $config -Algorithm SHA256).Hash
@@ -34,7 +35,7 @@ try{
     if(Test-Path -LiteralPath $data){throw 'Smoke wrote to the supplied real data directory.'}
     if((Get-FileHash -LiteralPath $config -Algorithm SHA256).Hash -ne $before){throw 'Smoke changed the supplied configuration.'}
     Add-Type -AssemblyName System.Drawing
-    foreach($name in @('00-Estado.png','01-Horarios.png','02-Secuencias.png','03-Solicitudes.png','04-Registro.png')){
+    foreach($name in @('00-Estado.png','01-Horarios.png','02-Secuencias.png','03-Solicitudes.png','04-Control-manual.png','05-Registro.png')){
         $path=Join-Path $OutputDirectory $name
         if(-not (Test-Path -LiteralPath $path)){throw "Missing screenshot $name"}
         $bitmap=[Drawing.Image]::FromFile($path)

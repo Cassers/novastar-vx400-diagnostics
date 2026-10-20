@@ -49,6 +49,7 @@ catch {
 $script:configPath=$ConfigPath; $script:dataDirectory=$DataDirectory
 $script:smoke=[bool]$SmokeTest
 $script:state=$null; $script:stateRecent=$false; $script:manualProcess=$null; $script:manualError=''
+$script:panelProcess=$null;$script:panelOutput='';$script:panelError='';$script:panelPending=$null;$script:panelPauseId='';$script:panelPauseDeadline=[DateTimeOffset]::MinValue;$script:panelResumeTask=$false
 $script:installerProcess=$null; $script:installerOutput=''; $script:installerError=''; $script:installerAction=''
 $script:stopDeadline=$null; $script:task=$null; $script:tickBusy=$false; $script:installerMigrates=$false
 $script:logOffset=0L; $script:logFragment=''; $script:logLines=New-Object 'Collections.Generic.List[string]'
@@ -318,15 +319,19 @@ function Begin-Installer([string]$Action,[bool]$Control=$false) {
     $script:installerProcess=Start-Process -FilePath (Get-WindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput $script:installerOutput -RedirectStandardError $script:installerError
     Set-Notice 'Actualizando inicio automático…'
 }
-function Start-Controller([bool]$Control) {
+function Start-Controller([bool]$Control,[switch]$ManualDry) {
     if($script:smoke){throw 'Controlador deshabilitado en SmokeTest.'}
     $script:task=Get-ControlTask
-    if(Test-Running){throw 'El monitor o control ya está activo. Pulse Detener antes de cambiar el modo.'}
+    if($null -ne $script:panelProcess -or $null -ne $script:panelPending){throw 'Espere a que termine el mando manual.'}
+    if((Test-Running) -or ($null -ne $script:manualProcess -and -not $script:manualProcess.HasExited)){throw 'El monitor o control ya está activo. Pulse Detener antes de cambiar el modo.'}
     if($null -ne $script:stopDeadline){throw 'Espere a que finalice la detención.'}
     Save-Configuration
     # Starting always uses the saved, validated config.
-    if($Control){if(-not $script:config.panelPowerCouplingVerified -or -not $script:config.startupProtectionVerified){throw 'Para iniciar control, confirme las dos condiciones de seguridad en Estado y guarde la configuración.'};$null=Read-VxPlanConfig -Path $script:configPath -EnableControl}else{$null=Read-VxPlanConfig -Path $script:configPath}
-    if($null -ne $script:task){Begin-Installer -Action start -Control $Control;return}
+    if($Control -and -not $ManualDry){if(-not $script:config.panelPowerCouplingVerified -or -not $script:config.startupProtectionVerified){throw 'Para iniciar control, confirme las dos condiciones de seguridad en Estado y guarde la configuración.'};$null=Read-VxPlanConfig -Path $script:configPath -EnableControl}else{$null=Read-VxPlanConfig -Path $script:configPath}
+    if($ManualDry){
+        $null=Read-VxPlanConfig -Path $script:configPath -EnableControl -ManualControl
+        if($null -ne $script:task -and [string]$script:task.State -ne 'Disabled'){throw 'Pulse Detener primero para pausar el inicio automatico durante el secado manual.'}
+    }elseif($null -ne $script:task){Begin-Installer -Action start -Control $Control;return}
     $watcher=Join-Path $PSScriptRoot 'Watch-Vx400Plan.ps1'
     if(-not (Test-Path -LiteralPath $watcher)){throw 'Falta Watch-Vx400Plan.ps1. Use el paquete completo.'}
     $null=[IO.Directory]::CreateDirectory($script:dataDirectory)
@@ -334,9 +339,37 @@ function Start-Controller([bool]$Control) {
     if(Test-Path -LiteralPath $stopPath){Remove-Item -LiteralPath $stopPath -Force}
     $arguments='-NoProfile -ExecutionPolicy RemoteSigned -File '+(Quote-Argument $watcher)+' -ConfigPath '+(Quote-Argument $script:configPath)+' -DataDirectory '+(Quote-Argument $script:dataDirectory)
     if($Control){$arguments+=' -EnableControl'}
+    if($ManualDry){$arguments+=' -ManualDry'}
     $script:manualError=Join-Path ([IO.Path]::GetTempPath()) ('vx400-control-'+[guid]::NewGuid().ToString('N')+'.err')
     $script:manualProcess=Start-Process -FilePath (Get-WindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardError $script:manualError
-    Set-Notice 'Inicio solicitado. Esperando los datos del controlador…'
+    Set-Notice $(if($ManualDry){'Secado manual solicitado. Una sola ejecucion; ante una perdida de comunicacion se detiene.'}else{'Inicio solicitado. Esperando los datos del controlador…'})
+}
+function Start-PanelCommand([ValidateSet('Normal','Blackout','White')][string]$Display) {
+    if($script:smoke){throw 'Mandos deshabilitados en SmokeTest.'}
+    if($null -ne $script:panelProcess -or $null -ne $script:panelPending){throw 'Espere a que termine el mando anterior.'}
+    if($null -ne $script:manualProcess -and -not $script:manualProcess.HasExited -and -not (Test-Running)){throw 'Espere a que el controlador publique su estado.'}
+    if(Test-Running){
+        if(-not $script:stateRecent -or ((Get-Property $script:state mode) -eq 'control' -and (Get-Property $script:state state) -notin @('BLACK','OPERATING'))){throw 'El brillo manual esta bloqueado durante la secuencia. Espere a que termine o use Detener.'}
+        $task=Get-ControlTask
+        $script:panelResumeTask=($null -ne $task -and $task.Settings.Enabled)
+        if($script:panelResumeTask){$null=Disable-ScheduledTask -TaskName 'NovaStar-VX400-Control' -TaskPath '\' -ErrorAction Stop}
+        $script:panelPending=$Display;$script:panelPauseId=[Guid]::NewGuid().ToString();$script:panelPauseDeadline=[DateTimeOffset]::UtcNow.AddSeconds(12)
+        $pausePath=Join-Path $script:dataDirectory 'manual-pause.request';$temporary=$pausePath+'.tmp'
+        [IO.File]::WriteAllText($temporary,$script:panelPauseId)
+        Move-VxAtomicFile -Source $temporary -Destination $pausePath
+        $script:panelResult.Text='Pausando el motor antes del mando manual...'
+        return
+    }
+    $task=Get-ControlTask
+    if($null -ne $task -and [string]$task.State -ne 'Disabled'){throw 'Pulse Detener para pausar el inicio automatico antes de usar los mandos.'}
+    Save-Configuration
+    $command=Join-Path $PSScriptRoot 'Set-Vx400Manual.ps1'
+    if(-not (Test-Path -LiteralPath $command)){throw 'Falta Set-Vx400Manual.ps1. Use el paquete completo.'}
+    $arguments='-NoProfile -ExecutionPolicy RemoteSigned -File '+(Quote-Argument $command)+' -ConfigPath '+(Quote-Argument $script:configPath)+' -DataDirectory '+(Quote-Argument $script:dataDirectory)+' -EnableControl -Display '+$Display+' -BrightnessPercent '+([double]$script:panelBrightness.Value).ToString([Globalization.CultureInfo]::InvariantCulture)
+    $script:panelOutput=Join-Path ([IO.Path]::GetTempPath()) ('vx400-panel-'+[guid]::NewGuid().ToString('N')+'.out')
+    $script:panelError=$script:panelOutput+'.err'
+    $script:panelProcess=Start-Process -FilePath (Get-WindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput $script:panelOutput -RedirectStandardError $script:panelError
+    $script:panelResult.Text='Enviando mando; esperando confirmacion del VX400...'
 }
 function Request-Stop {
     if($script:smoke){throw 'Detención deshabilitada en SmokeTest.'}
@@ -440,7 +473,7 @@ function Update-Status {
     $fresh=$script:stateRecent
     $communication=[string](Get-Property $script:state communication 'unknown')
     $stateName=[string](Get-Property $script:state state)
-    $script:connectionValue.Text=if(-not $fresh){'Sin datos recientes'}elseif($stateName -eq 'STOPPED'){'Monitor detenido'}elseif($communication -eq 'reachable'){'Comunicación disponible'}elseif($communication -eq 'unreachable'){'Sin comunicación'}elseif($communication -eq 'uncertain'){'Comunicación inestable'}else{'Sin confirmar'}
+    $script:connectionValue.Text=if(-not $fresh){'Sin datos recientes'}elseif($stateName -eq 'STOPPED'){'Proceso detenido'}elseif($communication -eq 'reachable'){'Comunicación disponible'}elseif($communication -eq 'unreachable'){'Sin comunicación'}elseif($communication -eq 'uncertain'){'Comunicación inestable'}else{'Sin confirmar'}
     $script:connectionValue.ForeColor=if($fresh -and $stateName -ne 'STOPPED' -and $communication -eq 'reachable'){[Drawing.Color]::FromArgb(22,126,91)}else{$script:muted}
     $names=@{BOOT='Iniciando';WAITING='En espera';PREHEAT='Preparación';OPERATING='En uso';DRY='Secado';COOLDOWN='Enfriamiento';BLACK='Reposo / negro';FAULT='Revisar alerta';STOPPED='Detenido';WAIT_OPERATOR='Espera su decisión'}
     $stateName=[string](Get-Property $script:state state)
@@ -452,7 +485,7 @@ function Update-Status {
     $script:remainingValue.Text=if($fresh -and $stateName -ne 'STOPPED' -and $null -ne $remaining){$span=[TimeSpan]::FromSeconds([Math]::Max(0,[double]$remaining));'{0:00}:{1:00}:{2:00}' -f [int][Math]::Floor($span.TotalHours),$span.Minutes,$span.Seconds}else{'—'}
     $script:progress.Value=if($fresh -and $stateName -ne 'STOPPED'){[int][Math]::Max(0,[Math]::Min(100,[double](Get-Property $script:state progressPercent 0)))}else{0}
     $mode=[string](Get-Property $script:state mode)
-    $script:modeLabel.Text=if(-not $fresh){'CONTROL LOCAL · SIN ESTADO RECIENTE'}elseif($stateName -eq 'STOPPED'){'CONTROLADOR DETENIDO'}elseif($stateName -eq 'FAULT'){'CONTROLADOR EN FALLO'}elseif($mode -eq 'control'){'CONTROL ACTIVO'}else{'MONITOR · SOLO LECTURA'}
+    $script:modeLabel.Text=if(-not $fresh){'CONTROL LOCAL · SIN ESTADO RECIENTE'}elseif($stateName -eq 'STOPPED'){'CONTROLADOR DETENIDO'}elseif($stateName -eq 'FAULT'){'CONTROLADOR EN FALLO'}elseif((Get-Property $script:state execution) -eq 'manual-dry'){'SECADO MANUAL · UNA EJECUCIÓN'}elseif($mode -eq 'control'){'CONTROL ACTIVO'}else{'MONITOR · SOLO LECTURA'}
     $script:gateId=[string](Get-Property $script:state operatorGateId)
     $script:operatorBanner.Visible=($fresh -and $stateName -notin @('STOPPED','FAULT') -and $communication -eq 'reachable' -and [bool](Get-Property $script:state operatorPending $false) -and -not [string]::IsNullOrWhiteSpace($script:gateId))
     $script:operatorText.Text='Se recuperó la comunicación. ¿Iniciar preparación o dejar en reposo? '+[string](Get-Property $script:state operatorMessage)
@@ -490,6 +523,40 @@ function Invoke-Tick {
             else{
                 if($script:installerAction -ne 'remove'){Use-InstalledContext}
                 Set-Notice $(if($script:installerAction -eq 'remove'){'Inicio automático retirado. Se conservan los datos y el registro.'}else{'Inicio automático actualizado. Usando la instalación y sus datos; esperando al controlador…'})
+            }
+        }
+                if($null -ne $script:panelPending){
+            if((Get-Property $script:state manualPauseRejectedId) -eq $script:panelPauseId){
+                $script:panelPending=$null
+                if($script:panelResumeTask){$null=Enable-ScheduledTask -TaskName 'NovaStar-VX400-Control' -TaskPath '\' -ErrorAction Stop}
+                $script:panelResult.Text='Mando rechazado: la secuencia esta en curso y conserva el control del brillo.'
+            }elseif(-not (Test-Running)){
+                $pending=$script:panelPending;$script:panelPending=$null
+                $path=Join-Path $script:dataDirectory 'manual-pause.request'
+                if([IO.File]::Exists($path) -and (Read-VxSharedText $path).Trim() -eq $script:panelPauseId){[IO.File]::Delete($path)}
+                Start-PanelCommand $pending
+            }elseif([DateTimeOffset]::UtcNow -gt $script:panelPauseDeadline){
+                $script:panelPending=$null
+                $path=Join-Path $script:dataDirectory 'manual-pause.request'
+                if([IO.File]::Exists($path)){[IO.File]::Delete($path)}
+                $script:panelResult.Text='No se confirmo la pausa. No se envio el mando; revise Registro.'
+            }
+        }
+        $thermal=$script:stateRecent -and (Get-Property $script:state mode) -eq 'control' -and (Get-Property $script:state state) -in @('DRY','PREHEAT','COOLDOWN')
+        $script:panelFields.Enabled=(-not $thermal -and $null -eq $script:panelProcess -and $null -eq $script:panelPending)
+        if($null -ne $script:panelProcess -and $script:panelProcess.HasExited){
+            $code=$script:panelProcess.ExitCode
+            $detail=if([IO.File]::Exists($script:panelError)){[IO.File]::ReadAllText($script:panelError)}else{''}
+            $output=if([IO.File]::Exists($script:panelOutput)){[IO.File]::ReadAllText($script:panelOutput)}else{''}
+            $script:panelProcess.Dispose();$script:panelProcess=$null
+            foreach($path in @($script:panelOutput,$script:panelError)){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}}
+            if($code -ne 0){$script:panelResult.Text='Mando sin confirmar. '+$detail.Trim();Set-Notice 'Revise el error del mando manual.' $true}
+            else{
+                $result=$output|ConvertFrom-Json
+                if(-not $result.success){throw 'Resultado manual invalido.'}
+                $displayName=@{Normal='Señal de entrada';Blackout='Negro';White='Blanco de prueba'}[[string]$result.display]
+                $script:panelResult.Text=('{0} · Brillo solicitado {1:0.#}% confirmado por protocolo. No es una medicion optica.' -f $displayName,[double]$result.brightnessRequestedPercent)
+                Set-Notice 'Mando manual confirmado por el VX400.'
             }
         }
         if($null -ne $script:stopDeadline){
@@ -605,7 +672,9 @@ $script:phaseGrid=New-Grid
 Add-TextColumn $script:phaseGrid name 'Nombre de fase' 180;Add-TextColumn $script:phaseGrid from 'Desde (%)' 80;Add-TextColumn $script:phaseGrid to 'Hasta (%)' 80;Add-TextColumn $script:phaseGrid minutes 'Duración (min)' 100
 $contentColumn=New-Object Windows.Forms.DataGridViewComboBoxColumn;$contentColumn.Name='content';$contentColumn.HeaderText='Contenido';$null=$contentColumn.Items.AddRange(@('White','FromInput'));$contentColumn.FillWeight=110;$null=$script:phaseGrid.Columns.Add($contentColumn)
 Add-StackRow $profilesStack $script:phaseGrid 2
-$phaseActions=New-Flow;$addPhase=New-Button 'Añadir fase';$addPhase.Add_Click({$last=if($script:phaseGrid.Rows.Count -gt 0){$script:phaseGrid.Rows[$script:phaseGrid.Rows.Count-1].Cells['to'].Value}else{'10'};$null=$script:phaseGrid.Rows.Add('Nueva fase',$last,$last,'10','FromInput');Update-Totals});$phaseActions.Controls.Add($addPhase)
+$phaseActions=New-Flow
+$manualDryButton=New-Button 'Iniciar secado manual' $true;$manualDryButton.Add_Click({Invoke-UiAction {Start-Controller $true -ManualDry}});$phaseActions.Controls.Add($manualDryButton)
+$addPhase=New-Button 'Añadir fase';$addPhase.Add_Click({$last=if($script:phaseGrid.Rows.Count -gt 0){$script:phaseGrid.Rows[$script:phaseGrid.Rows.Count-1].Cells['to'].Value}else{'10'};$null=$script:phaseGrid.Rows.Add('Nueva fase',$last,$last,'10','FromInput');Update-Totals});$phaseActions.Controls.Add($addPhase)
 $removePhase=New-Button 'Quitar fase';$removePhase.Add_Click({if($null -ne $script:phaseGrid.CurrentRow){$script:phaseGrid.Rows.Remove($script:phaseGrid.CurrentRow);Update-Totals}});$phaseActions.Controls.Add($removePhase)
 Add-StackRow $profilesStack $phaseActions 3 54
 $script:totalLabel=New-Label '' 11 $true;Add-StackRow $profilesStack $script:totalLabel 4 36
@@ -634,6 +703,30 @@ Add-TextColumn $script:requestGrid id 'ID';$script:requestGrid.Columns['id'].Vis
 Add-TextColumn $script:requestGrid title 'Solicitud' 180;Add-TextColumn $script:requestGrid start 'Inicio local' 120;Add-TextColumn $script:requestGrid end 'Fin local' 120;Add-TextColumn $script:requestGrid status 'Estado' 80
 Add-StackRow $requestStack $script:requestGrid 4
 $requestNote=New-Label 'Las reservas no pueden solaparse. Cancelar conserva el historial. Los horarios semanales se editan en Horarios y no se duplican aquí.' 10;$requestNote.AutoSize=$false;Add-StackRow $requestStack $requestNote 5 50
+
+$manualPage=New-Page 'Control manual';$manualStack=New-Stack $manualPage 5
+Add-StackRow $manualStack (New-Label 'Mandos directos de la pantalla' 17 $true) 0 45
+$manualHelp=New-Label 'Fuera de una secuencia, un mando pausa el motor y su inicio automatico. Durante secado o preparacion, el brillo queda bloqueado. Los cambios se aplican al VX400 y mantienen la salida elegida hasta el siguiente mando. El modo manual no ejecuta horarios.' 10;$manualHelp.AutoSize=$false
+Add-StackRow $manualStack $manualHelp 1 65
+$manualFields=New-Flow;$script:panelFields=$manualFields
+$manualFields.Controls.Add((New-Label 'Brillo solicitado (%)' 11 $true))
+$script:panelBrightness=New-Number 0 100 10 1;$manualFields.Controls.Add($script:panelBrightness)
+$manualFields.Controls.Add((New-Label 'Contenido' 11 $true))
+$script:panelDisplay=New-Object Windows.Forms.ComboBox;$script:panelDisplay.DropDownStyle='DropDownList';$script:panelDisplay.Width=200;$null=$script:panelDisplay.Items.AddRange(@('Negro','Señal de entrada','Blanco de prueba'));$script:panelDisplay.SelectedIndex=0;$manualFields.Controls.Add($script:panelDisplay)
+$applyManual=New-Button 'Aplicar' $true;$applyManual.Add_Click({Invoke-UiAction {Start-PanelCommand (@('Blackout','Normal','White')[$script:panelDisplay.SelectedIndex])}});$manualFields.Controls.Add($applyManual)
+$manualFields.SetFlowBreak($applyManual,$true)
+foreach($entry in @(@('Mostrar negro','Blackout'),@('Mostrar entrada','Normal'),@('Mostrar blanco','White'))){
+    $button=New-Button $entry[0];$button.Tag=$entry[1]
+    $button.Add_Click({param($sender,$eventArgs) Invoke-UiAction {Start-PanelCommand ([string]$sender.Tag)}})
+    $manualFields.Controls.Add($button)
+}
+$manualFields.SetFlowBreak($button,$true)
+$runDry=New-Button 'Iniciar secado manual' $true;$runDry.Add_Click({Invoke-UiAction {Start-Controller $true -ManualDry}});$manualFields.Controls.Add($runDry)
+Add-StackRow $manualStack $manualFields 2 155
+$script:panelResult=New-Label 'Sin mandos enviados. El porcentaje mostrado es una consigna, no una medición del panel.' 11;$script:panelResult.AutoSize=$false
+Add-StackRow $manualStack $script:panelResult 3 100
+$manualDetail=New-Label 'Secado manual: ejecuta una vez el perfil de Secado diario de Secuencias (188 min inicialmente). No modifica reservas ni horarios, no exige declarar alimentación conjunta y no se reinicia tras una desconexión. Mantenga la pantalla bajo supervisión durante la prueba.' 10;$manualDetail.AutoSize=$false
+Add-StackRow $manualStack $manualDetail 4
 
 $logPage=New-Page 'Registro';$logStack=New-Stack $logPage 3
 $logIntro=New-Label 'Actividad reciente del controlador' 17 $true;Add-StackRow $logStack $logIntro 0 45
@@ -690,19 +783,34 @@ function Invoke-GuiSmoke {
         $state.updatedUtc=[DateTimeOffset]::UtcNow.AddSeconds(-11).ToString('o');[IO.File]::WriteAllText($statePath,($state|ConvertTo-Json));Update-Status
         if($script:connectionValue.Text -ne 'Sin datos recientes'){throw 'Smoke: stale status claimed communication.'}
         $state.updatedUtc=[DateTimeOffset]::UtcNow.ToString('o');[IO.File]::WriteAllText($statePath,($state|ConvertTo-Json));Update-Status
+        $state.mode='control';$state.state='DRY'
+        [IO.File]::WriteAllText($statePath,($state|ConvertTo-Json));Invoke-Tick
+        if($script:panelFields.Enabled){throw 'Smoke: manual brightness enabled during dry.'}
+        $state.mode='monitor';$state.state='WAIT_OPERATOR'
+        [IO.File]::WriteAllText($statePath,($state|ConvertTo-Json));Invoke-Tick
+        if(-not $script:panelFields.Enabled){throw 'Smoke: manual fields remain blocked outside dry.'}
         $count=Get-ControlCount $script:form
-        if($script:tabs.TabPages.Count -ne 5 -or $count -lt 65){throw 'Smoke: expected tabs and controls missing.'}
+        if($script:tabs.TabPages.Count -ne 6 -or $count -lt 65){throw 'Smoke: expected tabs and controls missing.'}
         $script:form.Show();[Windows.Forms.Application]::DoEvents()
         if(-not $script:operatorBanner.Visible){throw 'Smoke: reachable operator question not displayed.'}
+        $script:tabs.SelectedTab=$manualPage
+        $applyManual.PerformClick()
+        if($script:notice.Text -ne 'Mandos deshabilitados en SmokeTest.'){throw ('Smoke: Apply handler failed: '+$script:notice.Text)}
+        $button.PerformClick()
+        if($script:notice.Text -ne 'Mandos deshabilitados en SmokeTest.'){throw ('Smoke: direct button handler failed: '+$script:notice.Text)}
+        $runDry.PerformClick()
+        if($script:notice.Text -ne 'Controlador deshabilitado en SmokeTest.'){throw ('Smoke: manual dry handler failed: '+$script:notice.Text)}
+        Set-Notice 'Vista de prueba. No se enviaron mandos.'
+
         if(-not [string]::IsNullOrWhiteSpace($ScreenshotPath)){
             $null=[IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($ScreenshotPath))
             for($tabIndex=0;$tabIndex -lt $script:tabs.TabPages.Count;$tabIndex++){
                 $script:tabs.SelectedIndex=$tabIndex;$script:form.PerformLayout();[Windows.Forms.Application]::DoEvents()
                 $bitmap=New-Object Drawing.Bitmap($script:form.Width,$script:form.Height)
-                try{$script:form.DrawToBitmap($bitmap,(New-Object Drawing.Rectangle(0,0,$bitmap.Width,$bitmap.Height)));$bitmap.Save((Join-Path $ScreenshotPath ('{0:00}-{1}.png' -f $tabIndex,@('Estado','Horarios','Secuencias','Solicitudes','Registro')[$tabIndex])),[Drawing.Imaging.ImageFormat]::Png)}finally{$bitmap.Dispose()}
+                try{$script:form.DrawToBitmap($bitmap,(New-Object Drawing.Rectangle(0,0,$bitmap.Width,$bitmap.Height)));$bitmap.Save((Join-Path $ScreenshotPath ('{0:00}-{1}.png' -f $tabIndex,@('Estado','Horarios','Secuencias','Solicitudes','Control-manual','Registro')[$tabIndex])),[Drawing.Imaging.ImageFormat]::Png)}finally{$bitmap.Dispose()}
             }
         }
-        Write-Output ('GUI smoke passed: 5 tabs, {0} controls, config round-trip + invalid-save preservation + requests CRUD/overlap + stale-state gate.' -f $count)
+        Write-Output ('GUI smoke passed: 6 tabs, {0} controls, config round-trip + invalid-save preservation + requests CRUD/overlap + stale-state gate.' -f $count)
     }finally{$script:form.Close();$script:configPath=$originalConfig;$script:dataDirectory=$originalData;if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Recurse -Force}}
 }
 
@@ -722,5 +830,6 @@ try{
     if($null -ne $script:mutex){$script:mutex.Dispose()}
     # Closing the window leaves the explicitly started background controller running.
     if($null -ne $script:manualProcess){$script:manualProcess.Dispose()}
+    if($null -ne $script:panelProcess){$script:panelProcess.Dispose()}
     if($null -ne $script:installerProcess){$script:installerProcess.Dispose()}
 }

@@ -96,11 +96,13 @@ class PlanRuntimeTests(unittest.TestCase):
         atomic_json(config_path, config)
         return config_path, config
 
-    def launch(self, directory, config_path, control=True, polls=40):
+    def launch(self, directory, config_path, control=True, polls=40, manual=False):
         args = [POWERSHELL, '-NoLogo', '-NoProfile', '-File', str(ROOT/'Watch-Vx400Plan.ps1'),
                 '-ConfigPath', str(config_path), '-DataDirectory', str(directory), '-MaxPolls', str(polls)]
         if control:
             args.append('-EnableControl')
+        if manual:
+            args.append('-ManualDry')
         return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
     def finish(self, process, timeout=15, code=0):
@@ -136,6 +138,108 @@ class PlanRuntimeTests(unittest.TestCase):
         command = dict(id=str(uuid.uuid4()), gateId=gate, action=action, utc=stamp())
         atomic_json(Path(directory)/'operador.json', command)
         return command
+
+    def manual_command(self, directory, path, display='White', value=10, enabled=True):
+        args=[POWERSHELL, '-NoLogo', '-NoProfile', '-File', str(ROOT/'Set-Vx400Manual.ps1'),
+              '-ConfigPath', str(path), '-DataDirectory', str(directory), '-BrightnessPercent', str(value), '-Display', display]
+        if enabled: args.append('-EnableControl')
+        return subprocess.run(args, capture_output=True, text=True, timeout=12)
+
+    def test_manual_panel_acknowledges_low_brightness_before_white_and_normal(self):
+        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+            path, _ = self.config(directory, device)
+            for display, command in [('White', b'\x06\x04'), ('Normal', b'\x03\x00')]:
+                marker=len(device.requests)
+                result=self.manual_command(directory, path, display=display, value=12)
+                self.assertEqual(result.returncode,0,result.stderr)
+                payload=json.loads(result.stdout)
+                self.assertTrue(payload['success']); self.assertFalse(payload['measured'])
+                self.assertEqual([r[18:-2] for r in device.requests[marker:] if r[10]==1], [b'\x05\x00',bytes([30]),command])
+
+    def test_manual_panel_lost_brightness_ack_never_enables_pattern(self):
+        with PlanDevice(drop_brightness=True) as device, tempfile.TemporaryDirectory() as directory:
+            path, _ = self.config(directory, device)
+            result=self.manual_command(directory,path)
+            self.assertEqual(result.returncode,2)
+            values=[r[18:-2] for r in writes(device)]
+            self.assertNotIn(b'\x06\x04',values);self.assertNotIn(b'\x03\x00',values)
+            self.assertEqual(values[-2:],[b'\x05\x00',b'\x00'])
+
+    def test_manual_panel_cannot_override_running_dry_or_readonly_controller(self):
+        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+            path, _ = self.config(directory, device)
+            p=self.launch(directory,path,control=False,polls=100)
+            try:
+                self.wait_state(p,directory,lambda s:s.get('communication')=='reachable')
+                result=self.manual_command(directory,path)
+                self.assertEqual(result.returncode,2)
+                self.assertIn('Another controller',result.stderr)
+                self.assertFalse(writes(device))
+                self.stop(directory);self.finish(p)
+            finally:
+                if p.poll() is None:p.kill();p.communicate()
+
+    def test_manual_panel_requires_explicit_control(self):
+        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+            path,_=self.config(directory,device)
+            result=self.manual_command(directory,path,enabled=False)
+            self.assertEqual(result.returncode,2);self.assertFalse(device.requests)
+
+    def test_manual_handoff_pauses_monitor_but_rejects_active_dry(self):
+        with PlanDevice() as device,tempfile.TemporaryDirectory() as directory:
+            path,_=self.config(directory,device,slow=True)
+            p=self.launch(directory,path,control=False,polls=100)
+            self.wait_state(p,directory,lambda s:s.get('communication')=='reachable')
+            (Path(directory)/'manual-pause.request').write_text(str(uuid.uuid4()))
+            self.finish(p)
+            self.assertIn('manual_pause_accepted',[e['event'] for e in self.events(directory)])
+            p=self.launch(directory,path,manual=True,polls=100)
+            try:
+                self.wait_state(p,directory,lambda s:s.get('state')=='DRY')
+                command=str(uuid.uuid4());(Path(directory)/'manual-pause.request').write_text(command)
+                self.wait_state(p,directory,lambda s:s.get('manualPauseRejectedId')==command)
+                self.assertIsNone(p.poll())
+                self.assertEqual(self.state(directory)['state'],'DRY')
+                self.stop(directory);self.finish(p)
+            finally:
+                if p.poll() is None:p.kill();p.communicate()
+
+    def test_manual_dry_runs_once_without_falsifying_power_checks(self):
+        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+            path, config = self.config(directory, device)
+            config.update(panelPowerCouplingVerified=False, startupProtectionVerified=False)
+            atomic_json(path, config)
+            # A pending gate is resolved by this new, explicit interactive launch.
+            atomic_json(Path(directory)/'estado.json', dict(operatorPending=True, operatorGateId=str(uuid.uuid4())))
+            self.finish(self.launch(directory, path, manual=True, polls=100))
+            events = self.events(directory)
+            self.assertEqual(sum(e['event']=='manual_dry_completed' for e in events), 1)
+            self.assertEqual(sum(e['event']=='profile_started' for e in events), 1)
+            self.assertEqual(self.state(directory)['state'], 'STOPPED')
+            self.assertEqual(self.state(directory)['execution'], 'manual-dry')
+            self.assertFalse(self.state(directory)['operatorPending'])
+            self.assertFalse(json.loads(path.read_text())['panelPowerCouplingVerified'])
+            values = [r[18:-2] for r in writes(device)]
+            self.assertEqual(values[:3], [b'\x05\x00', b'\x19', b'\x06\x04'])
+            self.assertEqual(values[-1], b'\x05\x00')
+            self.assertEqual([brightness(r) for r in writes(device) if brightness(r) is not None][-1], 25)
+
+    def test_manual_dry_read_loss_cancels_without_restart(self):
+        with PlanDevice(drop_read_at=[4]) as device, tempfile.TemporaryDirectory() as directory:
+            path, _ = self.config(directory, device, slow=True)
+            self.finish(self.launch(directory, path, manual=True, polls=100), code=2)
+            self.assertEqual(device.read_count, 4)
+            self.assertTrue(self.state(directory)['operatorPending'])
+            self.assertEqual(self.state(directory)['state'], 'FAULT')
+            self.assertEqual(sum(e['event']=='profile_started' for e in self.events(directory)), 1)
+            self.assertNotIn('manual_dry_completed', [e['event'] for e in self.events(directory)])
+
+    def test_manual_dry_without_control_rejected_before_network_or_storage(self):
+        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+            path, _ = self.config(directory, device)
+            self.finish(self.launch(directory, path, manual=True, control=False), code=2)
+            self.assertFalse(device.requests)
+            self.assertFalse((Path(directory)/'estado.json').exists())
 
     def test_readonly_default_recovers_without_writes(self):
         with PlanDevice(drop_read_at=[3]) as device, tempfile.TemporaryDirectory() as directory:

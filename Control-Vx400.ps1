@@ -1,6 +1,6 @@
 ﻿#requires -Version 5.1
 [CmdletBinding()]
-param([string]$ConfigPath='', [string]$DataDirectory='', [switch]$SmokeTest, [string]$ScreenshotPath='')
+param([string]$ConfigPath='', [string]$DataDirectory='', [switch]$SmokeTest, [string]$ScreenshotPath='', [switch]$RecoverOnOpen)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 # Resolve defaults here: Windows PowerShell 5.1 can evaluate parameter defaults before PSScriptRoot.
@@ -28,6 +28,7 @@ if(-not $SmokeTest -and $ConfigPath.StartsWith($installedRoot+[IO.Path]::Directo
             foreach($argumentPath in @($PSCommandPath,$ConfigPath,$DataDirectory)){if($argumentPath.Contains('"')){throw 'Ruta no válida: contiene comillas.'}}
             $arguments='-NoProfile -STA -ExecutionPolicy RemoteSigned -File "{0}" -ConfigPath "{1}" -DataDirectory "{2}"' -f $PSCommandPath,$ConfigPath,$DataDirectory
             $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            if($RecoverOnOpen){$arguments+=' -RecoverOnOpen'}
             $null=Start-Process -FilePath $exe -ArgumentList $arguments -Verb RunAs
             exit 0
         }catch{
@@ -49,6 +50,7 @@ catch {
 $script:configPath=$ConfigPath; $script:dataDirectory=$DataDirectory
 $script:smoke=[bool]$SmokeTest
 $script:state=$null; $script:stateRecent=$false; $script:manualProcess=$null; $script:manualError=''
+$script:recoveryProcess=$null;$script:recoveryOutput='';$script:recoveryError='';$script:recoverySnapshot='';$script:recoveryNeedsForce=$false
 $script:panelProcess=$null;$script:panelOutput='';$script:panelError='';$script:panelPending=$null;$script:panelPauseId='';$script:panelPauseDeadline=[DateTimeOffset]::MinValue;$script:panelResumeTask=$false
 $script:installerProcess=$null; $script:installerOutput=''; $script:installerError=''; $script:installerAction=''
 $script:stopDeadline=$null; $script:task=$null; $script:tickBusy=$false; $script:installerMigrates=$false
@@ -263,6 +265,7 @@ function Test-Running {
     return ($script:stateRecent -and [string](Get-Property $script:state state) -ne 'STOPPED')
 }
 function Save-Configuration {
+    if($null -ne $script:recoveryProcess){throw 'Espere a que termine la recuperacion del control.'}
     if(-not $script:smoke -and (Test-Running)){throw 'Pulse Detener y espere la confirmación antes de guardar cambios. La configuración anterior sigue activa.'}
     Assert-WritableContext
     $candidate=Get-EditedConfig
@@ -277,6 +280,23 @@ function Quote-Argument([string]$Value) {
     return '"'+$Value+'"'
 }
 function Get-WindowsPowerShell { return Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe' }
+function Start-GuiChildProcess([string]$Arguments,[string]$ErrorPath,[string]$OutputPath='') {
+    $options=@{FilePath=(Get-WindowsPowerShell);ArgumentList=$Arguments;WindowStyle='Hidden';PassThru=$true;RedirectStandardError=$ErrorPath}
+    if(-not [string]::IsNullOrWhiteSpace($OutputPath)){$options.RedirectStandardOutput=$OutputPath}
+    $child=Start-Process @options
+    # Windows PowerShell can lose ExitCode with redirected streams unless the handle is cached now.
+    # https://github.com/PowerShell/PowerShell/issues/5421
+    $null=$child.Handle
+    return $child
+}
+function Get-GuiChildExitCode([Diagnostics.Process]$Child) {
+    if(-not $Child.HasExited){throw 'El proceso sigue activo; espere su resultado.'}
+    # HasExited is already true: finish draining redirected output without blocking a running controller.
+    $Child.WaitForExit()
+    $code=$Child.ExitCode
+    if($null -eq $code){throw 'Windows no devolvio el codigo del proceso. No se pudo confirmar el resultado.'}
+    return [int]$code
+}
 function Set-GuiMutex([string]$Directory) {
     $hash=[Security.Cryptography.SHA256]::Create()
     try{$key=[BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Directory.ToLowerInvariant()))).Replace('-','')}finally{$hash.Dispose()}
@@ -297,6 +317,7 @@ function Use-InstalledContext {
     Update-Requests;Update-Status;Update-Log
 }
 function Begin-Installer([string]$Action,[bool]$Control=$false) {
+    if($null -ne $script:recoveryProcess){throw 'Espere a que termine la recuperacion del control.'}
     if($script:smoke){throw 'Instalación deshabilitada en SmokeTest.'}
     if($null -ne $script:installerProcess){throw 'Espere a que termine la operación de inicio automático.'}
     if(-not (Test-Admin)){throw 'Abra Abrir-Control-VX400.bat con «Ejecutar como administrador» para modificar el inicio automático.'}
@@ -316,10 +337,11 @@ function Begin-Installer([string]$Action,[bool]$Control=$false) {
     }
     $script:installerOutput=Join-Path ([IO.Path]::GetTempPath()) ('vx400-install-'+[guid]::NewGuid().ToString('N')+'.out')
     $script:installerError=$script:installerOutput+'.err'; $script:installerAction=$Action
-    $script:installerProcess=Start-Process -FilePath (Get-WindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput $script:installerOutput -RedirectStandardError $script:installerError
+    $script:installerProcess=Start-GuiChildProcess -Arguments $arguments -ErrorPath $script:installerError -OutputPath $script:installerOutput
     Set-Notice 'Actualizando inicio automático…'
 }
 function Start-Controller([bool]$Control,[switch]$ManualDry) {
+    if($null -ne $script:recoveryProcess){throw 'Espere a que termine la recuperacion del control.'}
     if($script:smoke){throw 'Controlador deshabilitado en SmokeTest.'}
     $script:task=Get-ControlTask
     if($null -ne $script:panelProcess -or $null -ne $script:panelPending){throw 'Espere a que termine el mando manual.'}
@@ -341,10 +363,11 @@ function Start-Controller([bool]$Control,[switch]$ManualDry) {
     if($Control){$arguments+=' -EnableControl'}
     if($ManualDry){$arguments+=' -ManualDry'}
     $script:manualError=Join-Path ([IO.Path]::GetTempPath()) ('vx400-control-'+[guid]::NewGuid().ToString('N')+'.err')
-    $script:manualProcess=Start-Process -FilePath (Get-WindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardError $script:manualError
+    $script:manualProcess=Start-GuiChildProcess -Arguments $arguments -ErrorPath $script:manualError
     Set-Notice $(if($ManualDry){'Secado manual solicitado. Una sola ejecucion; ante una perdida de comunicacion se detiene.'}else{'Inicio solicitado. Esperando los datos del controlador…'})
 }
 function Start-PanelCommand([ValidateSet('Normal','Blackout','White')][string]$Display) {
+    if($null -ne $script:recoveryProcess){throw 'Espere a que termine la recuperacion del control.'}
     $script:panelDisplay.SelectedIndex=switch($Display){'Blackout'{0};'Normal'{1};'White'{2}}
     if($script:smoke){throw 'Mandos deshabilitados en SmokeTest.'}
     if($null -ne $script:panelProcess -or $null -ne $script:panelPending){throw 'Espere a que termine el mando anterior.'}
@@ -369,8 +392,68 @@ function Start-PanelCommand([ValidateSet('Normal','Blackout','White')][string]$D
     $arguments='-NoProfile -ExecutionPolicy RemoteSigned -File '+(Quote-Argument $command)+' -ConfigPath '+(Quote-Argument $script:configPath)+' -DataDirectory '+(Quote-Argument $script:dataDirectory)+' -EnableControl -Display '+$Display+' -BrightnessPercent '+([double]$script:panelBrightness.Value).ToString([Globalization.CultureInfo]::InvariantCulture)
     $script:panelOutput=Join-Path ([IO.Path]::GetTempPath()) ('vx400-panel-'+[guid]::NewGuid().ToString('N')+'.out')
     $script:panelError=$script:panelOutput+'.err'
-    $script:panelProcess=Start-Process -FilePath (Get-WindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput $script:panelOutput -RedirectStandardError $script:panelError
+    $script:panelProcess=Start-GuiChildProcess -Arguments $arguments -ErrorPath $script:panelError -OutputPath $script:panelOutput
     $script:panelResult.Text='Enviando mando; esperando confirmacion del VX400...'
+}
+function Start-ControlRecovery([bool]$Force=$false) {
+    if($script:smoke){throw 'Recuperacion deshabilitada en SmokeTest.'}
+    if($null -ne $script:recoveryProcess -or $null -ne $script:panelProcess -or $null -ne $script:panelPending -or $null -ne $script:installerProcess){throw 'Espere a que termine la operacion actual.'}
+    if($Force -and (-not $script:recoveryNeedsForce -or -not [IO.File]::Exists($script:recoverySnapshot))){throw 'Primero pulse Recuperar control y revise los procesos detectados.'}
+    if(-not (Test-Admin)){
+        $arguments='-NoProfile -STA -ExecutionPolicy RemoteSigned -File '+(Quote-Argument $PSCommandPath)+' -ConfigPath '+(Quote-Argument $script:configPath)+' -DataDirectory '+(Quote-Argument $script:dataDirectory)+' -RecoverOnOpen'
+        $null=Start-Process -FilePath (Get-WindowsPowerShell) -ArgumentList $arguments -Verb RunAs
+        $script:form.Close();return
+    }
+    $worker=Join-Path $PSScriptRoot 'Recover-Vx400.ps1'
+    if(-not [IO.File]::Exists($worker)){throw 'Falta Recover-Vx400.ps1. Extraiga el paquete completo.'}
+    $null=Read-VxPlanConfig -Path $script:configPath
+    $arguments='-NoProfile -ExecutionPolicy RemoteSigned -File '+(Quote-Argument $worker)+' -ConfigPath '+(Quote-Argument $script:configPath)+' -DataDirectory '+(Quote-Argument $script:dataDirectory)
+    if($Force){$arguments+=' -Force -ExpectedOwnersPath '+(Quote-Argument $script:recoverySnapshot)}
+    $script:recoveryOutput=Join-Path ([IO.Path]::GetTempPath()) ('vx400-recovery-'+[guid]::NewGuid().ToString('N')+'.out')
+    $script:recoveryError=$script:recoveryOutput+'.err'
+    $script:recoveryNeedsForce=$false;$script:forceRecovery.Enabled=$false
+    $script:recoveryProcess=Start-GuiChildProcess -Arguments $arguments -ErrorPath $script:recoveryError -OutputPath $script:recoveryOutput
+    $script:recoveryResult.Text=$(if($Force){'Cerrando solo los procesos revisados; verificando que el bloqueo quede libre...'}else{'Buscando copias locales y solicitando su parada. Espere hasta 12 segundos...'})
+    Set-Notice 'Recuperacion en curso. No se enviaran cambios de brillo ni se reanudaran secuencias.'
+}
+function Update-ControlRecovery {
+    if($null -eq $script:recoveryProcess -or -not $script:recoveryProcess.HasExited){return}
+    $code=Get-GuiChildExitCode $script:recoveryProcess
+    $output=if([IO.File]::Exists($script:recoveryOutput)){[IO.File]::ReadAllText($script:recoveryOutput)}else{''}
+    $detail=if([IO.File]::Exists($script:recoveryError)){[IO.File]::ReadAllText($script:recoveryError)}else{''}
+    $script:recoveryProcess.Dispose();$script:recoveryProcess=$null
+    if([IO.File]::Exists($script:recoveryError)){[IO.File]::Delete($script:recoveryError)}
+    $result=$null
+    try{$result=$output|ConvertFrom-Json}catch{}
+    if($null -eq $result){$script:recoveryNeedsForce=$false;$script:forceRecovery.Enabled=$false;$script:recoveryResult.Text=('No se confirmo la recuperacion (codigo {0}). {1}' -f $code,$detail.Trim());Set-Notice 'Recuperacion sin confirmar. Revise el detalle visible.' $true;return}
+    $rows=New-Object 'System.Collections.Generic.List[string]'
+    $rows.Add([string](Get-Property $result message 'Sin mensaje del recuperador.'))
+    foreach($owner in @(Get-Property $result controllers @())){
+        $rows.Add(('PID {0} | {1} | Datos: {2}' -f (Get-Property $owner processId),(Get-Property $owner scriptPath),(Get-Property $owner dataDirectory)))
+    }
+    $script:recoveryNeedsForce=($code -eq 0 -and (Get-Property $result needsForce $false) -eq $true)
+    $script:forceRecovery.Enabled=$script:recoveryNeedsForce
+    if($script:recoverySnapshot -and $script:recoverySnapshot -ne $script:recoveryOutput -and [IO.File]::Exists($script:recoverySnapshot)){[IO.File]::Delete($script:recoverySnapshot)}
+    if($script:recoveryNeedsForce){
+        $script:recoverySnapshot=$script:recoveryOutput
+        $rows.Add('Forzar cierre interrumpe tambien un secado activo. Revise la lista antes de pulsarlo.')
+        Set-Notice 'Quedan procesos identificados. Puede revisar y usar Forzar cierre.' $true
+    }elseif($code -eq 0 -and (Get-Property $result success $false) -eq $true){
+        $script:recoverySnapshot=''
+        if([IO.File]::Exists($script:recoveryOutput)){[IO.File]::Delete($script:recoveryOutput)}
+        $script:panelBrightness.Value=10;$script:panelDisplay.SelectedIndex=0
+        $rows.Add('La salida anterior no queda confirmada. Elija Mostrar negro o Iniciar secado manual; la secuencia no se reanuda sola.')
+        Set-Notice 'Control local liberado. Ya puede enviar un mando manual o iniciar una secuencia nueva.'
+    }else{
+        $script:recoverySnapshot=''
+        if(-not [string]::IsNullOrWhiteSpace($detail)){$rows.Add($detail.Trim())}
+        Set-Notice 'No se pudo recuperar el control. Revise el detalle y los permisos.' $true
+    }
+    $script:recoveryResult.Text=$rows -join [Environment]::NewLine
+    $null=[IO.Directory]::CreateDirectory($script:dataDirectory)
+    $entry=[ordered]@{utc=[DateTimeOffset]::UtcNow.ToString('o');event='control_recovery';detail=$script:recoveryResult.Text;state='MANUAL'}
+    [IO.File]::AppendAllText((Join-Path $script:dataDirectory 'eventos.jsonl'),(($entry|ConvertTo-Json -Compress)+[Environment]::NewLine),(New-Object Text.UTF8Encoding($false)))
+    Update-Log
 }
 function Request-Stop {
     if($script:smoke){throw 'Detención deshabilitada en SmokeTest.'}
@@ -386,6 +469,7 @@ function Request-Stop {
     Set-Notice 'Detención ordenada solicitada. Espere hasta 10 segundos; no se forzará el proceso.'
 }
 function Send-OperatorAnswer([ValidateSet('restart','hold')][string]$Action) {
+    if($null -ne $script:recoveryProcess){throw 'Espere a que termine la recuperacion antes de responder al controlador.'}
     if($script:smoke){throw 'Respuestas deshabilitadas en SmokeTest.'}
     $state=Read-VxSharedText -Path (Join-Path $script:dataDirectory 'estado.json')|ConvertFrom-Json
     $age=([DateTimeOffset]::UtcNow-[DateTimeOffset]$state.updatedUtc).TotalSeconds
@@ -498,8 +582,9 @@ function Invoke-Tick {
     if($script:tickBusy){return};$script:tickBusy=$true
     try{
         Update-Status;Update-Log
-        if(-not $script:smoke){$script:task=Get-ControlTask}
+        if(-not $script:smoke){try{$script:task=Get-ControlTask}catch{$script:task=$null;Set-Notice $_.Exception.Message $true}}
         if($null -ne $script:manualProcess -and $script:manualProcess.HasExited){
+            $controllerExitCode=Get-GuiChildExitCode $script:manualProcess
             $detail=''
             if([IO.File]::Exists($script:manualError)){
                 $errorStream=[IO.File]::OpenRead($script:manualError)
@@ -510,11 +595,11 @@ function Invoke-Tick {
                 }finally{$errorStream.Dispose()}
                 [IO.File]::Delete($script:manualError)
             }
-            if($script:manualProcess.ExitCode -ne 0){Set-Notice ('El controlador terminó con código {0}. {1} Consulte Registro.' -f $script:manualProcess.ExitCode,$detail) $true}
+            if($controllerExitCode -ne 0){Set-Notice ('El controlador terminó con código {0}. {1} Consulte Registro.' -f $controllerExitCode,$detail) $true}
             $script:manualProcess.Dispose();$script:manualProcess=$null
         }
         if($null -ne $script:installerProcess -and $script:installerProcess.HasExited){
-            $exitCode=$script:installerProcess.ExitCode
+            $exitCode=Get-GuiChildExitCode $script:installerProcess
             $detail=''
             if([IO.File]::Exists($script:installerError)){$detail=[IO.File]::ReadAllText($script:installerError)}
             if($exitCode -ne 0 -and [string]::IsNullOrWhiteSpace($detail) -and [IO.File]::Exists($script:installerOutput)){$detail=[IO.File]::ReadAllText($script:installerOutput)}
@@ -544,14 +629,23 @@ function Invoke-Tick {
             }
         }
         $thermal=$script:stateRecent -and (Get-Property $script:state mode) -eq 'control' -and (Get-Property $script:state state) -in @('DRY','PREHEAT','COOLDOWN')
-        $script:panelFields.Enabled=(-not $thermal -and $null -eq $script:panelProcess -and $null -eq $script:panelPending)
+        $script:panelFields.Enabled=(-not $thermal -and $null -eq $script:panelProcess -and $null -eq $script:panelPending -and $null -eq $script:recoveryProcess)
         if($null -ne $script:panelProcess -and $script:panelProcess.HasExited){
-            $code=$script:panelProcess.ExitCode
+            $code=Get-GuiChildExitCode $script:panelProcess
             $detail=if([IO.File]::Exists($script:panelError)){[IO.File]::ReadAllText($script:panelError)}else{''}
             $output=if([IO.File]::Exists($script:panelOutput)){[IO.File]::ReadAllText($script:panelOutput)}else{''}
             $script:panelProcess.Dispose();$script:panelProcess=$null
             foreach($path in @($script:panelOutput,$script:panelError)){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}}
-            if($code -ne 0){$script:panelResult.Text='Mando sin confirmar. '+$detail.Trim();Set-Notice 'Revise el error del mando manual.' $true}
+            if($code -ne 0){
+                if([string]::IsNullOrWhiteSpace($detail)){$detail=$output}
+                if([string]::IsNullOrWhiteSpace($detail)){$detail='El proceso no devolvio detalles.'}
+                $detail=$detail.Trim();if($detail.Length -gt 4096){$detail=$detail.Substring(0,4096)}
+                $message=('Mando sin confirmar (codigo {0}). {1}' -f $code,$detail)
+                $script:panelResult.Text=$message;Set-Notice 'El mando no se confirmo. El detalle se conserva en Registro.' $true
+                $entry=[ordered]@{utc=[DateTimeOffset]::UtcNow.ToString('o');event='manual_command_failed';detail=$message;state='MANUAL'}
+                [IO.File]::AppendAllText((Join-Path $script:dataDirectory 'eventos.jsonl'),(($entry|ConvertTo-Json -Compress)+[Environment]::NewLine),(New-Object Text.UTF8Encoding($false)))
+                Update-Log
+            }
             else{
                 $result=$output|ConvertFrom-Json
                 if(-not $result.success){throw 'Resultado manual invalido.'}
@@ -560,6 +654,10 @@ function Invoke-Tick {
                 Set-Notice 'Mando manual confirmado por el VX400.'
             }
         }
+        Update-ControlRecovery
+        $script:recoverControl.Enabled=($null -eq $script:recoveryProcess -and $null -eq $script:panelProcess -and $null -eq $script:panelPending -and $null -eq $script:installerProcess)
+        $script:forceRecovery.Enabled=($script:recoverControl.Enabled -and $script:recoveryNeedsForce)
+        $script:operatorBanner.Enabled=($null -eq $script:recoveryProcess)
         if($null -ne $script:stopDeadline){
             if(-not (Test-Running)){$script:stopDeadline=$null;Set-Notice 'Controlador detenido. Ya puede guardar la configuración.'}
             elseif([DateTimeOffset]::UtcNow -gt $script:stopDeadline){$script:stopDeadline=$null;Set-Notice 'No se confirmó la detención en 10 segundos. Revise Registro antes de guardar; no se forzó el proceso.' $true}
@@ -569,7 +667,7 @@ function Invoke-Tick {
 }
 
 $script:form=New-Object Windows.Forms.Form
-$script:form.Text='NovaStar VX400 · Control local'
+$script:form.Text='NovaStar VX400 · Control local v0.5.0'
 $script:form.ClientSize=New-Object Drawing.Size(1200,860)
 $script:form.MinimumSize=New-Object Drawing.Size(1050,700)
 $script:form.StartPosition='CenterScreen';$script:form.BackColor=$script:background
@@ -705,7 +803,8 @@ Add-TextColumn $script:requestGrid title 'Solicitud' 180;Add-TextColumn $script:
 Add-StackRow $requestStack $script:requestGrid 4
 $requestNote=New-Label 'Las reservas no pueden solaparse. Cancelar conserva el historial. Los horarios semanales se editan en Horarios y no se duplican aquí.' 10;$requestNote.AutoSize=$false;Add-StackRow $requestStack $requestNote 5 50
 
-$manualPage=New-Page 'Control manual';$manualStack=New-Stack $manualPage 5
+$manualPage=New-Page 'Control manual';$manualPage.AutoScroll=$true;$manualStack=New-Stack $manualPage 6
+$manualStack.Dock='Top';$manualStack.Height=690
 Add-StackRow $manualStack (New-Label 'Mandos directos de la pantalla' 17 $true) 0 45
 $manualHelp=New-Label 'Fuera de una secuencia, un mando pausa el motor y su inicio automatico. Durante secado o preparacion, el brillo queda bloqueado. Los cambios se aplican al VX400 y mantienen la salida elegida hasta el siguiente mando. El modo manual no ejecuta horarios.' 10;$manualHelp.AutoSize=$false
 Add-StackRow $manualStack $manualHelp 1 65
@@ -724,10 +823,18 @@ foreach($entry in @(@('Mostrar negro','Blackout'),@('Mostrar entrada','Normal'),
 $manualFields.SetFlowBreak($button,$true)
 $runDry=New-Button 'Iniciar secado manual' $true;$runDry.Add_Click({Invoke-UiAction {Start-Controller $true -ManualDry}});$manualFields.Controls.Add($runDry)
 Add-StackRow $manualStack $manualFields 2 155
-$script:panelResult=New-Label 'Sin mandos enviados. El porcentaje mostrado es una consigna, no una medición del panel.' 11;$script:panelResult.AutoSize=$false
+$script:panelResult=New-Object Windows.Forms.TextBox;$script:panelResult.Multiline=$true;$script:panelResult.ReadOnly=$true;$script:panelResult.ScrollBars='Vertical';$script:panelResult.BackColor=[Drawing.Color]::White;$script:panelResult.Text='Sin mandos enviados. El porcentaje mostrado es una consigna, no una medicion del panel.'
 Add-StackRow $manualStack $script:panelResult 3 100
+$recoveryGroup=New-Object Windows.Forms.GroupBox;$recoveryGroup.Text='Recuperar control de otras copias en este PC';$recoveryGroup.Padding=New-Object Windows.Forms.Padding(10,20,10,8)
+$recoveryActions=New-Flow;$recoveryActions.Dock='Top';$recoveryActions.Height=48
+$script:recoverControl=New-Button 'Recuperar control';$script:recoverControl.Add_Click({Invoke-UiAction {Start-ControlRecovery $false}});$recoveryActions.Controls.Add($script:recoverControl)
+$script:forceRecovery=New-Button 'Forzar cierre y recuperar';$script:forceRecovery.Enabled=$false;$script:forceRecovery.Add_Click({Invoke-UiAction {Start-ControlRecovery $true}});$recoveryActions.Controls.Add($script:forceRecovery)
+$script:recoveryResult=New-Object Windows.Forms.TextBox;$script:recoveryResult.Multiline=$true;$script:recoveryResult.ReadOnly=$true;$script:recoveryResult.ScrollBars='Vertical';$script:recoveryResult.Dock='Fill';$script:recoveryResult.BackColor=[Drawing.Color]::White
+$script:recoveryResult.Text='Detecta nuestros motores locales para la misma IP y puerto. No detecta clientes de otros computadores. No reanuda secuencias ni cambia el brillo.'
+$recoveryGroup.Controls.Add($script:recoveryResult);$recoveryGroup.Controls.Add($recoveryActions)
+Add-StackRow $manualStack $recoveryGroup 4 180
 $manualDetail=New-Label 'Secado manual: ejecuta una vez el perfil de Secado diario de Secuencias (188 min inicialmente). No modifica reservas ni horarios, no exige declarar alimentación conjunta y no se reinicia tras una desconexión. Mantenga la pantalla bajo supervisión durante la prueba.' 10;$manualDetail.AutoSize=$false
-Add-StackRow $manualStack $manualDetail 4
+Add-StackRow $manualStack $manualDetail 5
 
 $logPage=New-Page 'Registro';$logStack=New-Stack $logPage 3
 $logIntro=New-Label 'Actividad reciente del controlador' 17 $true;Add-StackRow $logStack $logIntro 0 45
@@ -736,7 +843,7 @@ $script:logBox=New-Object Windows.Forms.TextBox;$script:logBox.Multiline=$true;$
 
 function Get-ControlCount($Control){$count=1;foreach($child in $Control.Controls){$count+=Get-ControlCount $child};return $count}
 function Invoke-GuiSmoke {
-    # Only fixture paths are passed here by tests. No timer, task lookup, network, controller or installer.
+    # Only fixture paths are passed here by tests. No timer, task lookup, network, real controller or installer. Harmless child fixtures test process completion.
     $originalConfig=$script:configPath;$originalData=$script:dataDirectory
     $temporary=Join-Path ([IO.Path]::GetTempPath()) ('vx400-gui-'+[guid]::NewGuid().ToString('N'))
     $null=[IO.Directory]::CreateDirectory($temporary)
@@ -800,9 +907,76 @@ function Invoke-GuiSmoke {
         $button.PerformClick()
         if($script:notice.Text -ne 'Mandos deshabilitados en SmokeTest.'){throw ('Smoke: direct button handler failed: '+$script:notice.Text)}
         if($script:panelDisplay.SelectedIndex -ne 2){throw 'Smoke: quick display button did not update selected content.'}
+        $script:recoverControl.PerformClick()
+        if($script:notice.Text -ne 'Recuperacion deshabilitada en SmokeTest.'){throw 'Smoke: recovery handler missing.'}
+        if($script:forceRecovery.Enabled){throw 'Smoke: force enabled without a reviewed owner.'}
         $script:panelDisplay.SelectedIndex=0
         $runDry.PerformClick()
         if($script:notice.Text -ne 'Controlador deshabilitado en SmokeTest.'){throw ('Smoke: manual dry handler failed: '+$script:notice.Text)}
+        # Exercise actual asynchronous Windows PowerShell completion, without any device commands.
+        # Start-Process is part of the failure boundary; the panel backend remains a harmless fixture.
+        $fixtureScript=Join-Path $temporary 'child-result.ps1'
+        $probeOutput=Join-Path $temporary 'uncached.out';$probeError=Join-Path $temporary 'uncached.err'
+        [IO.File]::WriteAllText($fixtureScript,'exit 0')
+        $fixtureArgs='-NoProfile -ExecutionPolicy RemoteSigned -File '+(Quote-Argument $fixtureScript)
+        $probe=Start-Process -FilePath (Get-WindowsPowerShell) -ArgumentList $fixtureArgs -WindowStyle Hidden -PassThru -RedirectStandardOutput $probeOutput -RedirectStandardError $probeError
+        try{
+            $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
+            while(-not $probe.HasExited){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: uncached probe did not finish.'};Start-Sleep -Milliseconds 25}
+            Write-Output ('Uncached redirected process ExitCode was null: '+($null -eq $probe.ExitCode))
+        }finally{$probe.Dispose()}
+        foreach($display in @('Blackout','White','Normal')){
+            $payload=@{success=$true;display=$display;brightnessRequestedPercent=10}|ConvertTo-Json -Compress
+            [IO.File]::WriteAllText($fixtureScript,("Write-Output '"+$payload+"'; exit 0"))
+            $script:panelOutput=Join-Path $temporary 'panel.out';$script:panelError=Join-Path $temporary 'panel.err'
+            $script:panelProcess=Start-GuiChildProcess -Arguments $fixtureArgs -ErrorPath $script:panelError -OutputPath $script:panelOutput
+            $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
+            while($null -ne $script:panelProcess){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: manual result did not finish.'};Invoke-Tick;Start-Sleep -Milliseconds 25}
+            if($script:notice.Text -ne 'Mando manual confirmado por el VX400.' -or $script:panelResult.Text -notmatch 'confirmado por protocolo'){
+                throw ('Smoke: successful asynchronous '+$display+' reported an error: '+$script:panelResult.Text+' / '+$script:notice.Text)
+            }
+        }
+        foreach($errorOutput in @('stderr','stdout','empty')){
+            $fixtureBody=switch($errorOutput){'stderr'{"[Console]::Error.WriteLine('Simulated transport failure'); exit 7"};'stdout'{"Write-Output 'Simulated transport failure'; exit 7"};'empty'{'exit 7'}}
+            [IO.File]::WriteAllText($fixtureScript,$fixtureBody)
+            $script:panelOutput=Join-Path $temporary 'panel.out';$script:panelError=Join-Path $temporary 'panel.err'
+            $script:panelProcess=Start-GuiChildProcess -Arguments $fixtureArgs -ErrorPath $script:panelError -OutputPath $script:panelOutput
+            $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
+            while($null -ne $script:panelProcess){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: failed result did not finish.'};Invoke-Tick;Start-Sleep -Milliseconds 25}
+            if($script:panelResult.Text -notmatch 'codigo 7' -or $script:logBox.Text -notmatch 'manual_command_failed'){
+                throw ('Smoke: real failure lost its exit code or log: '+$script:panelResult.Text)
+            }
+            if($errorOutput -ne 'empty' -and $script:panelResult.Text -notmatch 'Simulated transport failure'){throw 'Smoke: child error detail missing.'}
+        }
+        [IO.File]::WriteAllText($fixtureScript,'exit 0')
+        $script:manualError=Join-Path $temporary 'controller.err'
+        $script:manualProcess=Start-GuiChildProcess -Arguments $fixtureArgs -ErrorPath $script:manualError
+        Set-Notice 'Child result pending'
+        $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
+        while($null -ne $script:manualProcess){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: controller result did not finish.'};Invoke-Tick;Start-Sleep -Milliseconds 25}
+        if($script:notice.Text -ne 'Child result pending'){throw ('Smoke: successful controller reported error: '+$script:notice.Text)}
+        $script:installerAction='remove';$script:installerOutput=Join-Path $temporary 'installer.out';$script:installerError=Join-Path $temporary 'installer.err'
+        $script:installerProcess=Start-GuiChildProcess -Arguments $fixtureArgs -ErrorPath $script:installerError -OutputPath $script:installerOutput
+        $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
+        while($null -ne $script:installerProcess){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: installer result did not finish.'};Invoke-Tick;Start-Sleep -Milliseconds 25}
+        if($script:notice.Text -ne 'Inicio automático retirado. Se conservan los datos y el registro.'){throw ('Smoke: successful installer reported error: '+$script:notice.Text)}
+        $recoveryFixture=@{success=$false;needsForce=$true;message='Fixture: propietario detectado';controllers=@(@{processId=12345;scriptPath='C:\Fixture\Watch-Vx400.ps1';dataDirectory='C:\Fixture\watcher-data'})}|ConvertTo-Json -Depth 5 -Compress
+        [IO.File]::WriteAllText($fixtureScript,("Write-Output '"+$recoveryFixture+"'; exit 0"))
+        $script:recoveryOutput=Join-Path $temporary 'recovery.out';$script:recoveryError=Join-Path $temporary 'recovery.err'
+        $script:recoveryProcess=Start-GuiChildProcess -Arguments $fixtureArgs -ErrorPath $script:recoveryError -OutputPath $script:recoveryOutput
+        $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
+        while($null -ne $script:recoveryProcess){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: recovery result did not finish.'};Invoke-Tick;Start-Sleep -Milliseconds 25}
+        if(-not $script:forceRecovery.Enabled -or $script:recoveryResult.Text -notmatch '12345' -or -not [IO.File]::Exists($script:recoverySnapshot)){throw 'Smoke: recovery owner not shown or force snapshot missing.'}
+        $script:forceRecovery.PerformClick()
+        if($script:notice.Text -ne 'Recuperacion deshabilitada en SmokeTest.'){throw 'Smoke: force handler missing.'}
+        $recoveryFixture=@{success=$true;needsForce=$false;message='Fixture: bloqueo libre';controllers=@()}|ConvertTo-Json -Compress
+        [IO.File]::WriteAllText($fixtureScript,("Write-Output '"+$recoveryFixture+"'; exit 0"))
+        $script:recoveryOutput=Join-Path $temporary 'recovery-success.out';$script:recoveryError=Join-Path $temporary 'recovery-success.err'
+        $script:recoveryProcess=Start-GuiChildProcess -Arguments $fixtureArgs -ErrorPath $script:recoveryError -OutputPath $script:recoveryOutput
+        $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
+        while($null -ne $script:recoveryProcess){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: recovery success did not finish.'};Invoke-Tick;Start-Sleep -Milliseconds 25}
+        if($script:forceRecovery.Enabled -or $script:recoveryResult.Text -notmatch 'no queda confirmada' -or $script:recoverySnapshot){throw 'Smoke: successful recovery retained force or claimed display output.'}
+        $script:panelResult.Text='Sin mandos enviados al hardware. Resultados de procesos verificados con fixtures.'
         Set-Notice 'Vista de prueba. No se enviaron mandos.'
 
         if(-not [string]::IsNullOrWhiteSpace($ScreenshotPath)){
@@ -813,7 +987,7 @@ function Invoke-GuiSmoke {
                 try{$script:form.DrawToBitmap($bitmap,(New-Object Drawing.Rectangle(0,0,$bitmap.Width,$bitmap.Height)));$bitmap.Save((Join-Path $ScreenshotPath ('{0:00}-{1}.png' -f $tabIndex,@('Estado','Horarios','Secuencias','Solicitudes','Control-manual','Registro')[$tabIndex])),[Drawing.Imaging.ImageFormat]::Png)}finally{$bitmap.Dispose()}
             }
         }
-        Write-Output ('GUI smoke passed: 6 tabs, {0} controls, config round-trip + invalid-save preservation + requests CRUD/overlap + stale-state gate.' -f $count)
+        Write-Output ('GUI smoke passed: 6 tabs, {0} controls, config round-trip + invalid-save preservation + requests CRUD/overlap + stale-state gate + asynchronous success/failure results.' -f $count)
     }finally{$script:form.Close();$script:configPath=$originalConfig;$script:dataDirectory=$originalData;if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Recurse -Force}}
 }
 
@@ -825,7 +999,7 @@ try{
     else{
         Set-GuiMutex $script:dataDirectory
         Invoke-UiAction {Update-Requests}
-        Invoke-Tick;$timer.Start();$null=$script:form.ShowDialog()
+        Invoke-Tick;if($RecoverOnOpen){Invoke-UiAction {Start-ControlRecovery $false}};$timer.Start();$null=$script:form.ShowDialog()
     }
 }finally{
     $timer.Stop();$timer.Dispose();$script:form.Dispose()
@@ -835,4 +1009,6 @@ try{
     if($null -ne $script:manualProcess){$script:manualProcess.Dispose()}
     if($null -ne $script:panelProcess){$script:panelProcess.Dispose()}
     if($null -ne $script:installerProcess){$script:installerProcess.Dispose()}
+    if($null -ne $script:recoveryProcess){$script:recoveryProcess.Dispose()}
+    if($script:recoverySnapshot -and [IO.File]::Exists($script:recoverySnapshot)){[IO.File]::Delete($script:recoverySnapshot)}
 }

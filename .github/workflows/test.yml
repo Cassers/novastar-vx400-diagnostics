@@ -37,6 +37,14 @@ jobs:
         if: ${{ !cancelled() }}
         shell: powershell
         run: .\tests\Gui.Tests.ps1
+      - name: Controller ownership identification rules
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: .\tests\Ownership.Tests.ps1
+      - name: Recovery against disposable local controllers only
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: .\tests\Ownership.Windows.Tests.ps1
       - name: Native control task installation and migration
         if: ${{ !cancelled() }}
         shell: powershell

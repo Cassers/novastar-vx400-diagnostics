@@ -2,11 +2,16 @@
 
 2026-10-20. Pruebas automatizadas ejecutadas exclusivamente en simuladores; la ejecución física del diagnóstico fue realizada por el operador del sitio, según captura recibida. El nuevo secuenciador no ha enviado escrituras a hardware real.
 
-## App nativa y plan v0.4.0
+## App nativa y plan v0.5.0
+
+**Candidato local: pendiente de ejecución nativa Windows y publicación.** Las pruebas de versiones anteriores no validan por sí solas la nueva recuperación.
+
+- Recuperación local: 32 aserciones puras aprobadas en PowerShell 7.6/Linux. Se comprueban identidad, argumentos ambiguos/ajenos, endpoint, hashes, tarea propia y peticiones de parada existentes/enlaces duros. El escenario de procesos reales se omite en Linux y está preparado para Windows CI.
 
 - 280 aserciones puras del plan: tiempos 188/240/36 minutos, rampas fraccionarias, punto del 15%, zona Bogotá, medianoche, horarios semanales, solicitudes, cancelaciones y prioridad operación sobre preparación futura.
 - 23 escenarios definidos de ciclo de vida contra TCP loopback (uno específico de Windows y uno de Unix): solo lectura, reposo fuera de horario, secado programado, preparación completa antes de operar, bajada tras fin/cancelación, respuestas perdidas, pregunta al operador, decisión pendiente conservada al reiniciar, rechazo de respuestas antiguas, suspensión del proceso y consumo de petición de parada y lectura concurrente del estado en Windows.
 - 13 aserciones adicionales del generador de rampa del motor anterior, sin red. La plantilla de 70 minutos conserva niveles pendientes; no se usa como algoritmo térmico certificado.
+- Regresión de resultado asíncrono: procesos PowerShell reales y sin hardware producen éxito para negro/blanco/entrada, fallos con stderr/stdout o sin detalle, y salida normal de controlador/instalador. Se comprueba que no haya falso error por ExitCode vacío y que los fallos reales queden en Registro.
 - La GUI dispone de smoke test Windows PowerShell 5.1/WinForms: guardado válido, rechazo sin corromper configuración, creación/cancelación/solapamiento de solicitudes, estado obsoleto y pregunta pendiente. Genera seis capturas para revisión visual. Los stubs detectan cualquier arranque accidental del controlador o instalador.
 - Smoke test de instalación en runner Windows desechable: ACL privadas, SYSTEM, actualización propia, retirada/restauración y conservación/migración de decisión pendiente. No ejecuta escrituras contra un dispositivo real.
 - Nuevas regresiones de mandos manuales: ACK de brillo antes de contenido, ACK perdido sin habilitar blanco/entrada, exclusión por endpoint, secado manual de una ejecución, cancelación sin reinicio, respuesta de identidad suspendida y rechazo de cambio de brillo durante secado.

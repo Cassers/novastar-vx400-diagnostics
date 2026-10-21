@@ -1,6 +1,8 @@
 # Diagnóstico y monitor permanente del NovaStar VX400 original
 
-## App nativa Windows — v0.4.0
+## App nativa Windows — v0.5.0
+
+Esta entrega local es un **candidato**, con pruebas puras aprobadas y validación nativa Windows pendiente. El acceso a GitHub para ejecutar CI y publicar estuvo bloqueado al prepararlo.
 
 Extrae el paquete completo y abre **`Abrir-Control-VX400.bat`**. Abre una ventana nativa de Windows, sin navegador ni servidor web. Requiere Windows PowerShell 5.1 y .NET Framework incluidos en Windows; no requiere Python ni paquetes adicionales para utilizarla. La conexión es Ethernet al puerto de control del VX400, TCP 5200.
 
@@ -14,13 +16,21 @@ La app permite:
 
 ### Control manual y prueba de secado
 
-En **Control manual** puede ajustar brillo 0–100%, mostrar entrada de vídeo, negro o blanco de prueba. El valor inicial es 10%; cada mando verifica el ModelID y confirma Blackout → brillo → contenido. El resultado es una consigna con ACK, no una medición óptica. La salida elegida se mantiene después del mando.
+En **Control manual** puede ajustar brillo 0–100%, mostrar entrada de vídeo, negro o blanco de prueba. El valor inicial es 10%; cada mando verifica el ModelID y confirma Blackout → brillo → contenido. El resultado es una consigna con ACK, no una medición óptica. La salida elegida se mantiene después del mando. La versión 0.4.1 corrige un falso error al recoger el resultado de procesos en Windows PowerShell; los fallos reales muestran su código y conservan el detalle en **Registro**.
 
 Fuera de una secuencia, aplicar un mando solicita una pausa al motor y desactiva temporalmente su inicio automático. El propio motor rechaza la pausa durante secado, preuso o enfriamiento: una vista atrasada de la GUI no permite cambiar el brillo en medio de la rampa. Use **Iniciar monitor** o **Iniciar control** para regresar al modo correspondiente; el control automático conserva sus verificaciones de instalación.
 
 Para una prueba manual del secado: pulse **Detener**, espere y elija **Iniciar secado manual** en Control manual o Secuencias. Ejecuta una sola vez el perfil DRY completo (188 minutos inicialmente), sin crear reservas ni modificar horarios. Empieza desde el nivel inicial configurado; al completar confirma negro y reposo y termina. Cualquier lectura fallida, desconexión, pausa del proceso o fallo de ACK cancela la prueba y conserva una decisión pendiente; no arranca otra vez por recuperar red. Un nuevo clic explícito inicia de nuevo el perfil completo. **Detener** intenta Blackout/cero y termina la prueba.
 
 Este modo es supervisado y explícito: no exige declarar alimentación conjunta ni arranque en negro del calendario automático, y tampoco marca esas casillas por su cuenta. Conserva la aceptación del perfil provisional. No comprime la curva para simular un tratamiento físico en pocos minutos ni certifica que haya eliminado humedad. La app no conmuta la corriente eléctrica de los paneles.
+
+### Recuperar control de otra copia
+
+Si aparece «Another watcher owns this endpoint» o acceso denegado al bloqueo, abra **Control manual → Recuperar control**. Windows solicitará permisos de administrador si hace falta. La app identifica nuestros motores para la misma IP y puerto, muestra PID/carpeta, pausa su inicio automático verificado e intenta una parada normal.
+
+Si queda un proceso, revise la lista y pulse **Forzar cierre y recuperar**. Esta acción también interrumpe un secado activo. Solo cierra los procesos identificados y revisados; un propietario nuevo exige otra revisión. No elimina configuraciones, solicitudes, registros ni decisiones pendientes. Después elija **Mostrar negro** o **Iniciar secado manual**: la recuperación no modifica el brillo ni reanuda el progreso.
+
+Se detectan nuestras copias locales con scripts reconocidos. NovaLCT, otros programas y clientes de otros computadores quedan fuera de esta detección. No se retira la exclusión del endpoint ni se cierran todos los PowerShell. Detalles técnicos y aceptación en [recuperacion.md](docs/recuperacion.md).
 
 ### Perfil provisional recibido
 

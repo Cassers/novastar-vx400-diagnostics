@@ -115,10 +115,15 @@ class PlanRuntimeTests(unittest.TestCase):
         return out, err
 
     def state(self, directory):
-        try:
-            return json.loads((Path(directory)/'estado.json').read_text(encoding='utf-8-sig'))
-        except (OSError, ValueError):
-            return {}
+        # Windows can deny/open-miss a file briefly while the writer replaces it.
+        # Retry only unreadable snapshots, never an unexpected state value.
+        for attempt in range(6):
+            try:
+                return json.loads((Path(directory)/'estado.json').read_text(encoding='utf-8-sig'))
+            except (OSError, ValueError):
+                if attempt == 5:
+                    return {}
+                time.sleep(.01)
 
     def wait_state(self, process, directory, predicate, timeout=10):
         end = time.monotonic()+timeout

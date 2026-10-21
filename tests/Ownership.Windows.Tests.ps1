@@ -7,7 +7,7 @@ Import-Module (Join-Path $PSScriptRoot '../Vx400.Ownership.psm1') -Force
 $temporary=Join-Path ([IO.Path]::GetTempPath()) ('vx-ownership-win-'+[Guid]::NewGuid().ToString('N'))
 $null=[IO.Directory]::CreateDirectory($temporary)
 $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$children=@()
+$children=@();$systemTaskName=''
 function Assert($Condition,[string]$Name){if(-not $Condition){throw $Name}}
 function Start-Fixture([string]$Name,[string]$Data){
     $selectedConfig=if($Name -eq 'Watch-Vx400.ps1'){$legacyConfig}else{$config}
@@ -54,8 +54,31 @@ try{
     $forced=Invoke-VxOwnershipRecovery -ConfigPath $config -DataDirectory $legacyData -Force -ExpectedOwnersPath $snapshot
     Assert ($forced.success -and $forced.mutexAvailable) forceverified
     Assert ($legacy.WaitForExit(3000) -and $replacement.WaitForExit(3000)) forceexited
-    Write-Output 'PASS ownership Windows integration: genuine children, graceful stop, reviewed force, changed-owner refusal, mutex release. No device writes.'
+    # Reproduce the reported privilege mismatch: SYSTEM owns the legacy controller,
+    # while recovery runs as the elevated interactive runner account.
+    $systemTaskName='VX400-Recovery-System-Fixture-'+[Guid]::NewGuid().ToString('N')
+    $systemData=Join-Path $temporary 'system-legacy'
+    $systemScript=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../Watch-Vx400.ps1'))
+    $systemArgs='-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "'+$systemScript+'" -ConfigPath "'+$legacyConfig+'" -DataDirectory "'+$systemData+'" -MaxPolls 100000'
+    $action=New-ScheduledTaskAction -Execute $exe -Argument $systemArgs -WorkingDirectory ([IO.Path]::GetDirectoryName($systemScript))
+    $principal=New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
+    $trigger=New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddHours(1))
+    $null=Register-ScheduledTask -TaskName $systemTaskName -TaskPath '\' -Action $action -Principal $principal -Trigger $trigger
+    Start-ScheduledTask -TaskName $systemTaskName -TaskPath '\'
+    $deadline=[DateTime]::UtcNow.AddSeconds(15)
+    while(-not (Test-Path -LiteralPath (Join-Path $systemData 'estado.json')) -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 100}
+    Assert (Test-Path -LiteralPath (Join-Path $systemData 'estado.json')) systemfixturestarted
+    $systemResult=Invoke-VxOwnershipRecovery -ConfigPath $config -DataDirectory $systemData
+    Assert ($systemResult.needsForce -and -not $systemResult.success) systemownerreviewed
+    [IO.File]::WriteAllText($snapshot,($systemResult|ConvertTo-Json -Depth 8))
+    $systemForced=Invoke-VxOwnershipRecovery -ConfigPath $config -DataDirectory $systemData -Force -ExpectedOwnersPath $snapshot
+    Assert ($systemForced.success -and $systemForced.mutexAvailable) systemforceverified
+    Write-Output 'PASS ownership Windows integration: genuine children, graceful stop, reviewed force, changed-owner refusal, SYSTEM owner, mutex release. No device writes.'
 }finally{
+    if($systemTaskName -and (Get-ScheduledTask -TaskName $systemTaskName -TaskPath '\' -ErrorAction SilentlyContinue)){
+        Stop-ScheduledTask -TaskName $systemTaskName -TaskPath '\' -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $systemTaskName -TaskPath '\' -Confirm:$false
+    }
     foreach($child in $children){try{if(-not $child.HasExited){$child.Kill();$null=$child.WaitForExit(3000)}}finally{$child.Dispose()}}
     Remove-Item -LiteralPath $temporary -Recurse -Force
 }

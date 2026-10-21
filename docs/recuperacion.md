@@ -23,7 +23,7 @@ La parada ordenada de un controlador activo puede intentar Blackout y brillo cer
 - [x] Interfaz asíncrona, elevación y resultados visibles.
 - [x] Instalación copia los nuevos archivos y conserva datos.
 - [x] Pruebas de rechazo de procesos ajenos y escenarios nativos Windows sin hardware.
-- [ ] Empaquetado y publicación de v0.5.0 tras validación.
+- [x] Empaquetado de v0.5.0; la publicación se realiza tras aprobar CI.
 
 La CI ejecuta las reglas de identificación en Windows PowerShell 5.1 y cierra únicamente procesos de prueba contra loopback: parada normal, force con snapshot revisado, rechazo de un propietario nuevo y liberación del mutex. La GUI comprueba resultados asíncronos de éxito/fallo y produce capturas. La elevación UAC requiere revisión manual en el PC del operador.
 

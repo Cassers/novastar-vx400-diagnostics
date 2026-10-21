@@ -4,7 +4,7 @@
 
 ## App nativa y plan v0.5.0
 
-- Recuperación local: 40 aserciones en Windows PowerShell 5.1. Identidad, argumentos ambiguos/ajenos, rutas relativas, configuración modificada, endpoint, hashes, tarea propia y peticiones existentes/enlaces duros. Escenario con procesos reales en Windows: parada normal, cierre por handle tras revisar snapshot, rechazo de propietario nuevo y liberación de mutex. Solo loopback; ninguna escritura al hardware.
+- Recuperación local: 40 aserciones en Windows PowerShell 5.1. Identidad, argumentos ambiguos/ajenos, rutas relativas, configuración modificada, endpoint, hashes, tarea propia y peticiones existentes/enlaces duros. Escenario con procesos reales en Windows: parada normal, cierre por handle tras revisar snapshot, rechazo de propietario nuevo, cierre de motor iniciado como SYSTEM y liberación de mutex. Solo loopback; ninguna escritura al hardware.
 
 - 280 aserciones puras del plan: tiempos 188/240/36 minutos, rampas fraccionarias, punto del 15%, zona Bogotá, medianoche, horarios semanales, solicitudes, cancelaciones y prioridad operación sobre preparación futura.
 - 23 escenarios definidos de ciclo de vida contra TCP loopback (uno específico de Windows y uno de Unix): solo lectura, reposo fuera de horario, secado programado, preparación completa antes de operar, bajada tras fin/cancelación, respuestas perdidas, pregunta al operador, decisión pendiente conservada al reiniciar, rechazo de respuestas antiguas, suspensión del proceso y consumo de petición de parada y lectura concurrente del estado en Windows.

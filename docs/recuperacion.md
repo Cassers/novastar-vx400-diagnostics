@@ -7,7 +7,7 @@
 - Intentará una parada normal y pausará únicamente el inicio automático cuya pertenencia y destino haya verificado.
 - Si quedan procesos, ofrecerá Forzar cierre como acción explícita. Un cambio de propietario entre la detección y el clic requiere revisar la lista nueva.
 - No cerrará NovaLCT, otros PowerShell ni clientes de otro computador. No ampliará permisos del bloqueo global.
-- Conservará configuraciones, solicitudes, registros y decisiones pendientes. No reanudará secuencias ni modificará el brillo por recuperar el proceso.
+- Conservará configuraciones, solicitudes, registros y decisiones pendientes. No reanudará secuencias. La parada ordenada del controlador puede intentar negro y brillo cero.
 
 ## Diseño
 
@@ -15,7 +15,7 @@
 
 Control manual contiene Recuperar control, una lista de resultados y Forzar cierre cuando quedan candidatos revisados. Si hace falta elevación, se vuelve a abrir la misma GUI y contexto mediante UAC. La exclusión global sigue activa: recuperar nunca equivale a ignorar un bloqueo o matar todos los PowerShell.
 
-Tras éxito la salida anterior no queda confirmada. El operador elige Mostrar negro o inicia una secuencia nueva. Forzar cierre interrumpe también un secado activo; su progreso no se recupera.
+La parada ordenada de un controlador activo puede intentar Blackout y brillo cero. Tras éxito la salida anterior no queda confirmada. El operador elige Mostrar negro o inicia una secuencia nueva. Forzar cierre interrumpe también un secado activo; su progreso no se recupera.
 
 ## Tareas y verificación
 

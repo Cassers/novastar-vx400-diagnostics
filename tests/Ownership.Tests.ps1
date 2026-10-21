@@ -34,7 +34,10 @@ try{
         'powershell.exe -File Watch-Vx400Plan.ps1 -ConfigPath "C:\trailing\"',
         'powershell.exe -File Watch-Vx400Plan.ps1 -MaxPolls -1',
         'powershell.exe -File Set-Vx400Manual.ps1 -BrightnessPercent 101 -Display Normal',
-        'powershell.exe -Unknown -File Watch-Vx400Plan.ps1'
+        'powershell.exe -Unknown -File Watch-Vx400Plan.ps1',
+        'powershell.exe -File Watch-Vx400Plan.ps1 -ConfigPath "C:\copy\plan.config.json"-DataDirectory "C:\copy\plan-data"',
+        "powershell.exe`n-File Watch-Vx400Plan.ps1",
+        ('powershell.exe'+[char]0xA0+'-File Watch-Vx400Plan.ps1')
     )){Throws {ConvertFrom-VxControllerCommandLine $bad} ('reject '+$bad)}
     $record=[pscustomobject]@{ProcessId=1245;CreationDate=[DateTime]::UtcNow;ExecutablePath=$exe;CommandLine=$command}
     $identity=Get-VxControllerIdentity $record '127.0.0.1:5200' $exe
@@ -47,6 +50,14 @@ try{
     $identity=Get-VxControllerIdentity $record '127.0.0.1:5200' $exe
     Assert ($identity.configPath -eq $configPath -and $identity.dataDirectory -eq $data) safedefaults
     $record.CommandLine=$command
+    if($env:OS -eq 'Windows_NT'){
+        foreach($relative in @('C:Watch-Vx400Plan.ps1','\Watch-Vx400Plan.ps1','C:plan.config.json','\plan-data')){
+            Throws { & (Get-Module Vx400.Ownership) {param($value) Resolve-VxOwnershipPath $value -AllowMissing} $relative } ('reject relative '+$relative)
+        }
+    }
+    $record.CreationDate=[DateTime]::UtcNow.AddMinutes(-1)
+    Throws {Get-VxControllerIdentity $record '127.0.0.1:5200' $exe} configchangedafterstartup
+    $record.CreationDate=[DateTime]::UtcNow
     [IO.File]::AppendAllText($scriptPath,"`n# spoof content")
     Throws {Get-VxControllerIdentity $record '127.0.0.1:5200' $exe} hashspoof
     Copy-Item -LiteralPath $source -Destination $scriptPath -Force

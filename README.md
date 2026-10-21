@@ -28,7 +28,7 @@ Este modo es supervisado y explícito: no exige declarar alimentación conjunta 
 
 Si aparece «Another watcher owns this endpoint» o acceso denegado al bloqueo, abra **Control manual → Recuperar control**. Windows solicitará permisos de administrador si hace falta. La app identifica nuestros motores para la misma IP y puerto, muestra PID/carpeta, pausa su inicio automático verificado e intenta una parada normal.
 
-Si queda un proceso, revise la lista y pulse **Forzar cierre y recuperar**. Esta acción también interrumpe un secado activo. Solo cierra los procesos identificados y revisados; un propietario nuevo exige otra revisión. No elimina configuraciones, solicitudes, registros ni decisiones pendientes. Después elija **Mostrar negro** o **Iniciar secado manual**: la recuperación no modifica el brillo ni reanuda el progreso.
+Si queda un proceso, revise la lista y pulse **Forzar cierre y recuperar**. Esta acción también interrumpe un secado activo. Solo cierra los procesos identificados y revisados; un propietario nuevo exige otra revisión. No elimina configuraciones, solicitudes, registros ni decisiones pendientes. Después elija **Mostrar negro** o **Iniciar secado manual**: la recuperación no reanuda el progreso. Al detener un controlador activo, su parada ordenada puede intentar negro y brillo cero.
 
 Se detectan nuestras copias locales con scripts reconocidos. NovaLCT, otros programas y clientes de otros computadores quedan fuera de esta detección. No se retira la exclusión del endpoint ni se cierran todos los PowerShell. Detalles técnicos y aceptación en [recuperacion.md](docs/recuperacion.md).
 

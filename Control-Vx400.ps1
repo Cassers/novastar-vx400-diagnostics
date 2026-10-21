@@ -414,7 +414,7 @@ function Start-ControlRecovery([bool]$Force=$false) {
     $script:recoveryNeedsForce=$false;$script:forceRecovery.Enabled=$false
     $script:recoveryProcess=Start-GuiChildProcess -Arguments $arguments -ErrorPath $script:recoveryError -OutputPath $script:recoveryOutput
     $script:recoveryResult.Text=$(if($Force){'Cerrando solo los procesos revisados; verificando que el bloqueo quede libre...'}else{'Buscando copias locales y solicitando su parada. Espere hasta 12 segundos...'})
-    Set-Notice 'Recuperacion en curso. No se enviaran cambios de brillo ni se reanudaran secuencias.'
+    Set-Notice 'Recuperacion en curso. La parada ordenada puede intentar negro y brillo cero; no se reanudan secuencias.'
 }
 function Update-ControlRecovery {
     if($null -eq $script:recoveryProcess -or -not $script:recoveryProcess.HasExited){return}
@@ -830,7 +830,7 @@ $recoveryActions=New-Flow;$recoveryActions.Dock='Top';$recoveryActions.Height=48
 $script:recoverControl=New-Button 'Recuperar control';$script:recoverControl.Add_Click({Invoke-UiAction {Start-ControlRecovery $false}});$recoveryActions.Controls.Add($script:recoverControl)
 $script:forceRecovery=New-Button 'Forzar cierre y recuperar';$script:forceRecovery.Enabled=$false;$script:forceRecovery.Add_Click({Invoke-UiAction {Start-ControlRecovery $true}});$recoveryActions.Controls.Add($script:forceRecovery)
 $script:recoveryResult=New-Object Windows.Forms.TextBox;$script:recoveryResult.Multiline=$true;$script:recoveryResult.ReadOnly=$true;$script:recoveryResult.ScrollBars='Vertical';$script:recoveryResult.Dock='Fill';$script:recoveryResult.BackColor=[Drawing.Color]::White
-$script:recoveryResult.Text='Detecta nuestros motores locales para la misma IP y puerto. No detecta clientes de otros computadores. No reanuda secuencias ni cambia el brillo.'
+$script:recoveryResult.Text='Detecta nuestros motores locales para la misma IP y puerto. No detecta clientes de otros computadores. No reanuda secuencias. La parada ordenada puede intentar negro y brillo cero.'
 $recoveryGroup.Controls.Add($script:recoveryResult);$recoveryGroup.Controls.Add($recoveryActions)
 Add-StackRow $manualStack $recoveryGroup 4 180
 $manualDetail=New-Label 'Secado manual: ejecuta una vez el perfil de Secado diario de Secuencias (188 min inicialmente). No modifica reservas ni horarios, no exige declarar alimentación conjunta y no se reinicia tras una desconexión. Mantenga la pantalla bajo supervisión durante la prueba.' 10;$manualDetail.AutoSize=$false

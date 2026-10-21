@@ -16,7 +16,8 @@ function ConvertFrom-VxControllerCommandLine {
     $matches=[regex]::Matches($CommandLine,'"[^"\r\n]*"|[^\s"\r\n]+')
     $tokens=@();$offset=0
     foreach($match in $matches){
-        if($CommandLine.Substring($offset,$match.Index-$offset) -notmatch '^\s*$'){throw 'Ambiguous command quoting.'}
+        $gap=$CommandLine.Substring($offset,$match.Index-$offset)
+        if($gap -notmatch '^[ \t]*$' -or ($offset -gt 0 -and $gap.Length -eq 0)){throw 'Ambiguous command quoting or token separator.'}
         $token=$match.Value
         if($token.StartsWith('"')){
             $token=$token.Substring(1,$token.Length-2)
@@ -25,7 +26,7 @@ function ConvertFrom-VxControllerCommandLine {
         if(-not $token){throw 'Empty command argument.'}
         $tokens+=$token;$offset=$match.Index+$match.Length
     }
-    if($CommandLine.Substring($offset) -notmatch '^\s*$' -or $tokens.Count -lt 3){throw 'Malformed PowerShell command line.'}
+    if($CommandLine.Substring($offset) -notmatch '^[ \t]*$' -or $tokens.Count -lt 3){throw 'Malformed PowerShell command line.'}
     $allowedHosts=@('-nologo','-noprofile','-noninteractive','-sta','-mta')
     $index=1;$hostOptions=@{}
     while($index -lt $tokens.Count -and $tokens[$index] -ine '-File'){
@@ -63,6 +64,7 @@ function ConvertFrom-VxControllerCommandLine {
 function Resolve-VxOwnershipPath {
     param([Parameter(Mandatory)][string]$Path,[switch]$Directory,[switch]$AllowMissing)
     if(-not [IO.Path]::IsPathRooted($Path) -or $Path.StartsWith('\\') -or $Path -match '(^|[\\/])\.\.?([\\/]|$)' -or $Path.Contains('"')){throw 'An absolute local, unambiguous path is required.'}
+    if($env:OS -eq 'Windows_NT' -and $Path -notmatch '^[A-Za-z]:[\\/]'){throw 'Drive-relative and root-relative paths are forbidden.'}
     $full=[IO.Path]::GetFullPath($Path)
     if($env:OS -eq 'Windows_NT' -and ($full -notmatch '^[A-Za-z]:\\' -or $full.Substring(2).Contains(':'))){throw 'Device/alternate-stream paths are forbidden.'}
     $cursor=$full
@@ -123,6 +125,7 @@ function Get-VxControllerIdentity {
     $data=Resolve-VxOwnershipPath $data -Directory
     if((Get-VxEndpointFromConfig $config) -cne $Endpoint){throw 'Different controller endpoint.'}
     if($null -eq $ProcessRecord.CreationDate){throw 'Process creation time unavailable.'}
+    if([int]$ProcessRecord.ProcessId -gt 0 -and (Get-Item -LiteralPath $config).LastWriteTimeUtc -gt ([DateTime]$ProcessRecord.CreationDate).ToUniversalTime()){throw 'Controller config changed after startup; the running endpoint is unconfirmed. Inspect the original controller.'}
     return [pscustomobject]@{processId=[int]$ProcessRecord.ProcessId;scriptPath=$path;configPath=$config;dataDirectory=$data;creationTimeUtc=([DateTime]$ProcessRecord.CreationDate).ToUniversalTime().ToString('o');gracefulSupported=($parsed.scriptName -eq 'Watch-Vx400Plan.ps1');scriptHash=$scriptHash;configHash=(Get-VxOwnershipHash $config);commandLine=[string]$ProcessRecord.CommandLine;executablePath=$exe}
 }
 function Find-VxControllers {

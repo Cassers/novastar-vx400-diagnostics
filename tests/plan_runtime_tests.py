@@ -350,15 +350,17 @@ class PlanRuntimeTests(unittest.TestCase):
                 second_hold = self.command(directory, gate, 'hold')
                 self.wait_state(p, directory, lambda s: s.get('operatorLastCommandId') == second_hold['id'])
                 atomic_json(Path(directory)/'operador.json', first_hold)
-                time.sleep(.2)
-                self.assertEqual(self.state(directory)['operatorLastCommandId'], second_hold['id'])
-                time.sleep(.3)
-                self.assertTrue(self.state(directory)['operatorPending'])
+                time.sleep(.5)
+                # A Windows atomic replacement can make a single open transiently unavailable.
+                # Wait for a readable snapshot, then assert its values (never wait for the expected value).
+                held = self.wait_state(p, directory, lambda s: 'operatorPending' in s)
+                self.assertEqual(held['operatorLastCommandId'], second_hold['id'])
+                self.assertTrue(held['operatorPending'])
                 self.assertEqual(len(writes(device)), count)
                 self.command(directory, gate, 'restart')
                 self.wait_state(p, directory, lambda s: s.get('state') == 'PREHEAT')
-                self.wait_state(p, directory, lambda s: s.get('state') == 'BLACK', timeout=10)
-                self.assertFalse(self.state(directory)['operatorPending'])
+                completed = self.wait_state(p, directory, lambda s: s.get('state') == 'BLACK', timeout=10)
+                self.assertFalse(completed['operatorPending'])
                 starts = [e['detail'] for e in self.events(directory) if e['event'] == 'profile_started']
                 self.assertEqual(sum(s.startswith('PREHEAT') for s in starts), 1)
                 self.assertNotIn('operating', [e['event'] for e in self.events(directory)])

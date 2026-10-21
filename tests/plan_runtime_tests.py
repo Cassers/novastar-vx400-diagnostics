@@ -349,9 +349,16 @@ class PlanRuntimeTests(unittest.TestCase):
             try:
                 state = self.wait_state(p, directory, lambda s: s.get('operatorPending') and s.get('communication') == 'reachable')
                 gate = state['operatorGateId']
-                count = len(writes(device))
                 first_hold = self.command(directory, gate, 'hold')
                 self.wait_state(p, directory, lambda s: s.get('operatorLastCommandId') == first_hold['id'])
+                # Reconnection is published before its protective Blackout/zero writes.
+                # Processing hold establishes that those writes have finished.
+                recovery_writes = [r for r in device.requests[device.failed_at+1:] if r[10] == 1]
+                self.assertTrue(recovery_writes)
+                for request in recovery_writes:
+                    self.assertIn((struct.unpack_from('<I', request, 12)[0], request[18:-2]),
+                                  [(0x13000004, b'\x05\x00'), (0x02000001, b'\x00')])
+                count = len(writes(device))
                 second_hold = self.command(directory, gate, 'hold')
                 self.wait_state(p, directory, lambda s: s.get('operatorLastCommandId') == second_hold['id'])
                 atomic_json(Path(directory)/'operador.json', first_hold)

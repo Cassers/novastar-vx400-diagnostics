@@ -14,7 +14,7 @@ La app permite:
 
 ### Control manual y prueba de secado
 
-En **Control manual** puede ajustar brillo 0–100%, mostrar entrada de vídeo, negro o blanco de prueba. El valor inicial es 10%; cada mando verifica el ModelID y confirma Blackout → brillo → contenido. El resultado es una consigna con ACK, no una medición óptica. La salida elegida se mantiene después del mando. La versión 0.4.1 corrige un falso error al recoger el resultado de procesos en Windows PowerShell; los fallos reales muestran su código y conservan el detalle en **Registro**.
+En **Control manual** puede ajustar brillo 0–100%, mostrar entrada de vídeo, negro o blanco de prueba. El valor inicial es 10%; cada mando verifica el ModelID y confirma Blackout → brillo → contenido. El resultado es una consigna con ACK, no una medición óptica. La salida elegida se mantiene después del mando. La versión 0.5.0 corrige un falso error al recoger el resultado de procesos en Windows PowerShell; los fallos reales muestran su código y conservan el detalle en **Registro**.
 
 Fuera de una secuencia, aplicar un mando solicita una pausa al motor y desactiva temporalmente su inicio automático. El propio motor rechaza la pausa durante secado, preuso o enfriamiento: una vista atrasada de la GUI no permite cambiar el brillo en medio de la rampa. Use **Iniciar monitor** o **Iniciar control** para regresar al modo correspondiente; el control automático conserva sus verificaciones de instalación.
 

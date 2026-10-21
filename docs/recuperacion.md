@@ -22,9 +22,9 @@ La parada ordenada de un controlador activo puede intentar Blackout y brillo cer
 - [x] Identificación estricta y recuperación normal/forzada con snapshot de propietarios.
 - [x] Interfaz asíncrona, elevación y resultados visibles.
 - [x] Instalación copia los nuevos archivos y conserva datos.
-- [ ] Pruebas de rechazo de procesos ajenos y escenarios nativos Windows sin hardware.
+- [x] Pruebas de rechazo de procesos ajenos y escenarios nativos Windows sin hardware.
 - [ ] Empaquetado y publicación de v0.5.0 tras validación.
 
-Comprobado localmente: 32 aserciones de identificación, rechazo de comandos ajenos y preservación de peticiones existentes/enlaces duros; sintaxis PowerShell. La ejecución de CIM, cierre por handle, elevación y WinForms en Windows está pendiente: el acceso a GitHub para la CI no estuvo disponible durante la preparación. El paquete local se identifica como candidato.
+La CI ejecuta las reglas de identificación en Windows PowerShell 5.1 y cierra únicamente procesos de prueba contra loopback: parada normal, force con snapshot revisado, rechazo de un propietario nuevo y liberación del mutex. La GUI comprueba resultados asíncronos de éxito/fallo y produce capturas. La elevación UAC requiere revisión manual en el PC del operador.
 
 Reversión: retirar botones/worker/módulo de recuperación y sus pruebas; la exclusión y el motor de secuencias siguen funcionando. El arreglo de resultados asíncronos es independiente y se conserva.

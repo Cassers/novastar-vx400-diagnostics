@@ -17,7 +17,7 @@ function ConvertFrom-VxControllerCommandLine {
     $tokens=@();$offset=0
     foreach($match in $matches){
         $gap=$CommandLine.Substring($offset,$match.Index-$offset)
-        if($gap -notmatch '^[ \t]*$' -or ($offset -gt 0 -and $gap.Length -eq 0)){throw 'Ambiguous command quoting or token separator.'}
+        if($gap -notmatch '\A[ \t]*\z' -or ($offset -gt 0 -and $gap.Length -eq 0)){throw 'Ambiguous command quoting or token separator.'}
         $token=$match.Value
         if($token.StartsWith('"')){
             $token=$token.Substring(1,$token.Length-2)
@@ -26,7 +26,7 @@ function ConvertFrom-VxControllerCommandLine {
         if(-not $token){throw 'Empty command argument.'}
         $tokens+=$token;$offset=$match.Index+$match.Length
     }
-    if($CommandLine.Substring($offset) -notmatch '^[ \t]*$' -or $tokens.Count -lt 3){throw 'Malformed PowerShell command line.'}
+    if($CommandLine.Substring($offset) -notmatch '\A[ \t]*\z' -or $tokens.Count -lt 3){throw 'Malformed PowerShell command line.'}
     $allowedHosts=@('-nologo','-noprofile','-noninteractive','-sta','-mta')
     $index=1;$hostOptions=@{}
     while($index -lt $tokens.Count -and $tokens[$index] -ine '-File'){

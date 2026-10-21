@@ -2,8 +2,6 @@
 
 ## App nativa Windows — v0.5.0
 
-Esta entrega local es un **candidato**, con pruebas puras aprobadas y validación nativa Windows pendiente. El acceso a GitHub para ejecutar CI y publicar estuvo bloqueado al prepararlo.
-
 Extrae el paquete completo y abre **`Abrir-Control-VX400.bat`**. Abre una ventana nativa de Windows, sin navegador ni servidor web. Requiere Windows PowerShell 5.1 y .NET Framework incluidos en Windows; no requiere Python ni paquetes adicionales para utilizarla. La conexión es Ethernet al puerto de control del VX400, TCP 5200.
 
 La app permite:

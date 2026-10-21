@@ -39,7 +39,7 @@ try{
         "powershell.exe`n-File Watch-Vx400Plan.ps1",
         ('powershell.exe'+[char]0xA0+'-File Watch-Vx400Plan.ps1')
     )){Throws {ConvertFrom-VxControllerCommandLine $bad} ('reject '+$bad)}
-    $record=[pscustomobject]@{ProcessId=1245;CreationDate=[DateTime]::UtcNow;ExecutablePath=$exe;CommandLine=$command}
+    $record=[pscustomobject]@{ProcessId=1245;CreationDate=(Get-Item -LiteralPath $configPath).LastWriteTimeUtc.AddSeconds(1);ExecutablePath=$exe;CommandLine=$command}
     $identity=Get-VxControllerIdentity $record '127.0.0.1:5200' $exe
     Assert ($identity.processId -eq 1245 -and $identity.gracefulSupported) genuineidentity
     Assert ($identity.dataDirectory -eq $data) datadir
@@ -57,7 +57,7 @@ try{
     }
     $record.CreationDate=[DateTime]::UtcNow.AddMinutes(-1)
     Throws {Get-VxControllerIdentity $record '127.0.0.1:5200' $exe} configchangedafterstartup
-    $record.CreationDate=[DateTime]::UtcNow
+    $record.CreationDate=(Get-Item -LiteralPath $configPath).LastWriteTimeUtc.AddSeconds(1)
     [IO.File]::AppendAllText($scriptPath,"`n# spoof content")
     Throws {Get-VxControllerIdentity $record '127.0.0.1:5200' $exe} hashspoof
     Copy-Item -LiteralPath $source -Destination $scriptPath -Force

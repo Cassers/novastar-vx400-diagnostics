@@ -1,12 +1,10 @@
 # Evidencia de validación
 
-2026-10-20. Pruebas automatizadas ejecutadas exclusivamente en simuladores; la ejecución física del diagnóstico fue realizada por el operador del sitio, según captura recibida. El nuevo secuenciador no ha enviado escrituras a hardware real.
+2026-10-21. Pruebas automatizadas ejecutadas exclusivamente en simuladores; la ejecución física del diagnóstico fue realizada por el operador del sitio, según captura recibida. El nuevo secuenciador no ha enviado escrituras a hardware real.
 
 ## App nativa y plan v0.5.0
 
-**Candidato local: pendiente de ejecución nativa Windows y publicación.** Las pruebas de versiones anteriores no validan por sí solas la nueva recuperación.
-
-- Recuperación local: 32 aserciones puras aprobadas en PowerShell 7.6/Linux. Se comprueban identidad, argumentos ambiguos/ajenos, endpoint, hashes, tarea propia y peticiones de parada existentes/enlaces duros. El escenario de procesos reales se omite en Linux y está preparado para Windows CI.
+- Recuperación local: 40 aserciones en Windows PowerShell 5.1. Identidad, argumentos ambiguos/ajenos, rutas relativas, configuración modificada, endpoint, hashes, tarea propia y peticiones existentes/enlaces duros. Escenario con procesos reales en Windows: parada normal, cierre por handle tras revisar snapshot, rechazo de propietario nuevo y liberación de mutex. Solo loopback; ninguna escritura al hardware.
 
 - 280 aserciones puras del plan: tiempos 188/240/36 minutos, rampas fraccionarias, punto del 15%, zona Bogotá, medianoche, horarios semanales, solicitudes, cancelaciones y prioridad operación sobre preparación futura.
 - 23 escenarios definidos de ciclo de vida contra TCP loopback (uno específico de Windows y uno de Unix): solo lectura, reposo fuera de horario, secado programado, preparación completa antes de operar, bajada tras fin/cancelación, respuestas perdidas, pregunta al operador, decisión pendiente conservada al reiniciar, rechazo de respuestas antiguas, suspensión del proceso y consumo de petición de parada y lectura concurrente del estado en Windows.

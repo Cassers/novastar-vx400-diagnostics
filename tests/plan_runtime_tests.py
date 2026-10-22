@@ -501,7 +501,9 @@ class PlanRuntimeTests(unittest.TestCase):
                 second_gate = state['operatorGateId']
                 self.command(directory, first_gate, 'restart')
                 time.sleep(.4)
-                state = self.state(directory)
+                # Atomic replacement can make a Windows snapshot temporarily unreadable.
+                # Retry only missing data; false pending/wrong gate still fails below.
+                state = self.wait_state(p, directory, lambda s: 'operatorPending' in s)
                 self.assertTrue(state['operatorPending'])
                 self.assertEqual(state['operatorGateId'], second_gate)
                 self.assertEqual(state['state'], 'WAIT_OPERATOR')

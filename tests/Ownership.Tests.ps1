@@ -55,6 +55,14 @@ try{
             Throws { & (Get-Module Vx400.Ownership) {param($value) Resolve-VxOwnershipPath $value -AllowMissing} $relative } ('reject relative '+$relative)
         }
     }
+    [IO.File]::WriteAllText($configPath,'{"deviceAddress":"127.0.0.1","tcpPort":5200,"connectionType":"USB","usbDeviceKey":"chosen-device"}')
+    $record.CreationDate=(Get-Item -LiteralPath $configPath).LastWriteTimeUtc.AddSeconds(1)
+    $usbIdentity=Get-VxControllerIdentity $record 'USB:LOCAL' $exe
+    Assert ($usbIdentity.processId -eq 1245) usbowneridentified
+    Throws {Get-VxControllerIdentity $record '127.0.0.1:5200' $exe} usbdoesnotmatchEthernet
+    [IO.File]::WriteAllText($configPath,'{"deviceAddress":"127.0.0.1","tcpPort":5200,"connectionType":"invalid"}')
+    Throws {Get-VxControllerIdentity $record 'USB:LOCAL' $exe} rejectunknowntransport
+    [IO.File]::WriteAllText($configPath,'{"deviceAddress":"127.0.0.1","tcpPort":5200}')
     $record.CreationDate=[DateTime]::UtcNow.AddMinutes(-1)
     Throws {Get-VxControllerIdentity $record '127.0.0.1:5200' $exe} configchangedafterstartup
     $record.CreationDate=(Get-Item -LiteralPath $configPath).LastWriteTimeUtc.AddSeconds(1)

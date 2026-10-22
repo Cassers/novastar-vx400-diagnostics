@@ -1,6 +1,15 @@
 # Evidencia de validación
 
-2026-10-21. Pruebas automatizadas ejecutadas exclusivamente en simuladores; la ejecución física del diagnóstico fue realizada por el operador del sitio, según captura recibida. El nuevo secuenciador no ha enviado escrituras a hardware real.
+2026-10-22. Pruebas automatizadas ejecutadas exclusivamente en simuladores; la ejecución física del diagnóstico fue realizada por el operador del sitio, según captura recibida. El nuevo secuenciador no ha enviado escrituras a hardware real.
+
+## Ampliación VX600 y USB/Ethernet v0.6.0
+
+- Selección de modelo y transporte; configuraciones anteriores VX400/Ethernet y nuevas VX600/Ethernet.
+- Pruebas de ambos modelos contra TCP loopback: monitor, mandos manuales, secado completo, identidad incorrecta o cambiada, ausencia de escrituras ante configuración inválida.
+- Prueba de lectura en un proceso real: VX400/VX600 correctos, modelo erróneo y exclusión con un monitor activo.
+- USB usa pruebas de la implementación C# con IO inyectada: envolturas, fragmentación, rutas directa/A3, checksum de identidad, tag/estado/residuo, errores, plazos, selección y cambio de dispositivo. Estas pruebas no cargan un driver Windows ni acceden a USB físico.
+- Revisión independiente: corregida la posibilidad de cambiar automáticamente de dispositivo entre paquetes y el arrastre de confirmaciones de instalación al seleccionar otro USB.
+- Pendiente: aceptación del driver y descriptores del VX600 real, intercambios físicos por USB/Ethernet y efecto térmico del perfil provisional. Las pruebas simuladas no acreditan esos resultados.
 
 ## App nativa y plan v0.5.0
 

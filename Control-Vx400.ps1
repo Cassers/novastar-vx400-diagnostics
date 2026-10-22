@@ -29,7 +29,7 @@ if(-not $SmokeTest -and $ConfigPath.StartsWith($installedRoot+[IO.Path]::Directo
             $arguments='-NoProfile -STA -ExecutionPolicy RemoteSigned -File "{0}" -ConfigPath "{1}" -DataDirectory "{2}"' -f $PSCommandPath,$ConfigPath,$DataDirectory
             $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
             if($RecoverOnOpen){$arguments+=' -RecoverOnOpen'}
-            $null=Start-Process -FilePath $exe -ArgumentList $arguments -Verb RunAs
+            $null=Start-Process -FilePath $exe -ArgumentList $arguments -WindowStyle Hidden -Verb RunAs
             exit 0
         }catch{
             $null=[Windows.Forms.MessageBox]::Show('Windows necesita permiso de administrador para abrir la configuración protegida y el inicio automático. No se abrió el control. '+$_.Exception.Message,'NovaStar VX400',[Windows.Forms.MessageBoxButtons]::OK,[Windows.Forms.MessageBoxIcon]::Information)
@@ -38,6 +38,7 @@ if(-not $SmokeTest -and $ConfigPath.StartsWith($installedRoot+[IO.Path]::Directo
     }
 }
 Import-Module (Join-Path $PSScriptRoot 'Vx400.Schedule.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'Vx.Connection.psm1') -Force
 try { $script:config=Read-VxPlanConfig -Path $ConfigPath }
 catch {
     if($ConfigPath.StartsWith($installedRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
@@ -56,6 +57,8 @@ $script:installerProcess=$null; $script:installerOutput=''; $script:installerErr
 $script:stopDeadline=$null; $script:task=$null; $script:tickBusy=$false; $script:installerMigrates=$false
 $script:logOffset=0L; $script:logFragment=''; $script:logLines=New-Object 'Collections.Generic.List[string]'
 $script:logIdentity=''; $script:loading=$false; $script:profileKey='dry'; $script:gateId=''
+$script:connectionProcess=$null;$script:connectionOutput='';$script:connectionError='';$script:connectionList=$false
+$script:verificationTarget='';$script:refreshingUsb=$false
 $script:profiles=@{}
 foreach ($key in @('dry','preheat','cooldown')) { $script:profiles[$key]=@($script:config.profiles.$key) }
 $script:blue=[Drawing.Color]::FromArgb(24,82,166)
@@ -210,6 +213,9 @@ function Get-EditedConfig {
     Save-ProfileEdits
     $candidate=$script:config|ConvertTo-Json -Depth 20|ConvertFrom-Json
     $candidate.deviceAddress=$script:address.Text.Trim(); $candidate.tcpPort=[int]$script:port.Value
+    $candidate.deviceModel=[string]$script:model.SelectedItem
+    $candidate.connectionType=[string]$script:transport.SelectedItem
+    $candidate.usbDeviceKey=[string]$script:usbDevice.SelectedItem.Key
     $candidate.pollIntervalSeconds=[double]$script:poll.Value; $candidate.timeoutMs=[int]$script:timeout.Value
     $candidate.offlineFailures=[int]$script:offlineFailures.Value; $candidate.onlineSuccesses=[int]$script:onlineSuccesses.Value
     $candidate.maximumObservationGapSeconds=[double]$script:maxGap.Value
@@ -265,13 +271,13 @@ function Test-Running {
     return ($script:stateRecent -and [string](Get-Property $script:state state) -ne 'STOPPED')
 }
 function Save-Configuration {
-    if($null -ne $script:recoveryProcess){throw 'Espere a que termine la recuperacion del control.'}
+    if($null -ne $script:recoveryProcess -or $null -ne $script:connectionProcess){throw 'Espere a que termine la recuperacion o prueba de conexion.'}
     if(-not $script:smoke -and (Test-Running)){throw 'Pulse Detener y espere la confirmación antes de guardar cambios. La configuración anterior sigue activa.'}
     Assert-WritableContext
     $candidate=Get-EditedConfig
     Write-ValidatedJson -Path $script:configPath -Document $candidate -Kind config
     $script:config=Read-VxPlanConfig -Path $script:configPath
-    $script:endpoint.Text=('{0}:{1}  ·  {2}' -f $script:config.deviceAddress,$script:config.tcpPort,$script:config.timeZone)
+    Update-ConnectionLabels
     Update-Totals
     Set-Notice 'Configuración guardada y validada. Se aplicará al iniciar el monitor o control.'
 }
@@ -317,7 +323,7 @@ function Use-InstalledContext {
     Update-Requests;Update-Status;Update-Log
 }
 function Begin-Installer([string]$Action,[bool]$Control=$false) {
-    if($null -ne $script:recoveryProcess){throw 'Espere a que termine la recuperacion del control.'}
+    if($null -ne $script:recoveryProcess -or $null -ne $script:connectionProcess){throw 'Espere a que termine la recuperacion o prueba de conexion.'}
     if($script:smoke){throw 'Instalación deshabilitada en SmokeTest.'}
     if($null -ne $script:installerProcess){throw 'Espere a que termine la operación de inicio automático.'}
     if(-not (Test-Admin)){throw 'Abra Abrir-Control-VX400.bat con «Ejecutar como administrador» para modificar el inicio automático.'}
@@ -341,7 +347,7 @@ function Begin-Installer([string]$Action,[bool]$Control=$false) {
     Set-Notice 'Actualizando inicio automático…'
 }
 function Start-Controller([bool]$Control,[switch]$ManualDry) {
-    if($null -ne $script:recoveryProcess){throw 'Espere a que termine la recuperacion del control.'}
+    if($null -ne $script:recoveryProcess -or $null -ne $script:connectionProcess){throw 'Espere a que termine la recuperacion o prueba de conexion.'}
     if($script:smoke){throw 'Controlador deshabilitado en SmokeTest.'}
     $script:task=Get-ControlTask
     if($null -ne $script:panelProcess -or $null -ne $script:panelPending){throw 'Espere a que termine el mando manual.'}
@@ -367,7 +373,7 @@ function Start-Controller([bool]$Control,[switch]$ManualDry) {
     Set-Notice $(if($ManualDry){'Secado manual solicitado. Una sola ejecucion; ante una perdida de comunicacion se detiene.'}else{'Inicio solicitado. Esperando los datos del controlador…'})
 }
 function Start-PanelCommand([ValidateSet('Normal','Blackout','White')][string]$Display) {
-    if($null -ne $script:recoveryProcess){throw 'Espere a que termine la recuperacion del control.'}
+    if($null -ne $script:recoveryProcess -or $null -ne $script:connectionProcess){throw 'Espere a que termine la recuperacion o prueba de conexion.'}
     $script:panelDisplay.SelectedIndex=switch($Display){'Blackout'{0};'Normal'{1};'White'{2}}
     if($script:smoke){throw 'Mandos deshabilitados en SmokeTest.'}
     if($null -ne $script:panelProcess -or $null -ne $script:panelPending){throw 'Espere a que termine el mando anterior.'}
@@ -397,11 +403,11 @@ function Start-PanelCommand([ValidateSet('Normal','Blackout','White')][string]$D
 }
 function Start-ControlRecovery([bool]$Force=$false) {
     if($script:smoke){throw 'Recuperacion deshabilitada en SmokeTest.'}
-    if($null -ne $script:recoveryProcess -or $null -ne $script:panelProcess -or $null -ne $script:panelPending -or $null -ne $script:installerProcess){throw 'Espere a que termine la operacion actual.'}
+    if($null -ne $script:connectionProcess -or $null -ne $script:recoveryProcess -or $null -ne $script:panelProcess -or $null -ne $script:panelPending -or $null -ne $script:installerProcess){throw 'Espere a que termine la operacion actual.'}
     if($Force -and (-not $script:recoveryNeedsForce -or -not [IO.File]::Exists($script:recoverySnapshot))){throw 'Primero pulse Recuperar control y revise los procesos detectados.'}
     if(-not (Test-Admin)){
         $arguments='-NoProfile -STA -ExecutionPolicy RemoteSigned -File '+(Quote-Argument $PSCommandPath)+' -ConfigPath '+(Quote-Argument $script:configPath)+' -DataDirectory '+(Quote-Argument $script:dataDirectory)+' -RecoverOnOpen'
-        $null=Start-Process -FilePath (Get-WindowsPowerShell) -ArgumentList $arguments -Verb RunAs
+        $null=Start-Process -FilePath (Get-WindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -Verb RunAs
         $script:form.Close();return
     }
     $worker=Join-Path $PSScriptRoot 'Recover-Vx400.ps1'
@@ -629,7 +635,7 @@ function Invoke-Tick {
             }
         }
         $thermal=$script:stateRecent -and (Get-Property $script:state mode) -eq 'control' -and (Get-Property $script:state state) -in @('DRY','PREHEAT','COOLDOWN')
-        $script:panelFields.Enabled=(-not $thermal -and $null -eq $script:panelProcess -and $null -eq $script:panelPending -and $null -eq $script:recoveryProcess)
+        $script:panelFields.Enabled=(-not $thermal -and $null -eq $script:panelProcess -and $null -eq $script:panelPending -and $null -eq $script:recoveryProcess -and $null -eq $script:connectionProcess)
         if($null -ne $script:panelProcess -and $script:panelProcess.HasExited){
             $code=Get-GuiChildExitCode $script:panelProcess
             $detail=if([IO.File]::Exists($script:panelError)){[IO.File]::ReadAllText($script:panelError)}else{''}
@@ -651,13 +657,14 @@ function Invoke-Tick {
                 if(-not $result.success){throw 'Resultado manual invalido.'}
                 $displayName=@{Normal='Señal de entrada';Blackout='Negro';White='Blanco de prueba'}[[string]$result.display]
                 $script:panelResult.Text=('{0} · Brillo solicitado {1:0.#}% confirmado por protocolo. No es una medicion optica.' -f $displayName,[double]$result.brightnessRequestedPercent)
-                Set-Notice 'Mando manual confirmado por el VX400.'
+                Set-Notice 'Mando manual confirmado por el controlador.'
             }
         }
+        Update-ConnectionProbe
         Update-ControlRecovery
-        $script:recoverControl.Enabled=($null -eq $script:recoveryProcess -and $null -eq $script:panelProcess -and $null -eq $script:panelPending -and $null -eq $script:installerProcess)
+        $script:recoverControl.Enabled=($null -eq $script:recoveryProcess -and $null -eq $script:panelProcess -and $null -eq $script:panelPending -and $null -eq $script:installerProcess -and $null -eq $script:connectionProcess)
         $script:forceRecovery.Enabled=($script:recoverControl.Enabled -and $script:recoveryNeedsForce)
-        $script:operatorBanner.Enabled=($null -eq $script:recoveryProcess)
+        $script:operatorBanner.Enabled=($null -eq $script:recoveryProcess -and $null -eq $script:connectionProcess)
         if($null -ne $script:stopDeadline){
             if(-not (Test-Running)){$script:stopDeadline=$null;Set-Notice 'Controlador detenido. Ya puede guardar la configuración.'}
             elseif([DateTimeOffset]::UtcNow -gt $script:stopDeadline){$script:stopDeadline=$null;Set-Notice 'No se confirmó la detención en 10 segundos. Revise Registro antes de guardar; no se forzó el proceso.' $true}
@@ -666,15 +673,75 @@ function Invoke-Tick {
     finally{$script:tickBusy=$false}
 }
 
+function Update-ConnectionLabels {
+    $script:form.Text='NovaStar '+$script:config.deviceModel+' · Control local v0.6.0'
+    $script:headerTitle.Text=$script:config.deviceModel+'  /  Control local'
+    $destination=if($script:config.connectionType -eq 'USB'){'USB · '+$(if($script:config.usbDeviceKey){$script:config.usbDeviceKey}else{'selección automática'})}else{'Ethernet · '+$script:config.deviceAddress+':'+$script:config.tcpPort}
+    $script:endpoint.Text=$destination+'  ·  '+$script:config.timeZone
+}
+function Update-TargetVerification {
+    if($script:refreshingUsb){return}
+    $target=if([string]$script:transport.SelectedItem -eq 'USB'){[string]$script:usbDevice.SelectedItem.Key}else{$script:address.Text.Trim()+':'+$script:port.Value}
+    $identity=([string]$script:model.SelectedItem)+'|'+([string]$script:transport.SelectedItem)+'|'+$target
+    if($script:verificationTarget -and $identity -cne $script:verificationTarget){$script:powerVerified.Checked=$false;$script:startupVerified.Checked=$false}
+    $script:verificationTarget=$identity
+}
+function Update-ConnectionFields {
+    $usb=([string]$script:transport.SelectedItem -eq 'USB')
+    $script:address.Enabled=-not $usb;$script:port.Enabled=-not $usb
+    $script:usbDevice.Enabled=$usb;$script:scanUsb.Enabled=$usb
+}
+function Start-ConnectionProbe([switch]$ListUsb) {
+    if($script:smoke){throw 'Prueba de conexion deshabilitada en SmokeTest.'}
+    if((Test-Running) -or $null -ne $script:connectionProcess -or $null -ne $script:panelProcess -or $null -ne $script:panelPending -or $null -ne $script:installerProcess -or $null -ne $script:recoveryProcess){throw 'Detenga el monitor o secado y espere antes de probar otra conexion.'}
+    $task=Get-ControlTask
+    if($null -ne $task -and [string]$task.State -ne 'Disabled'){throw 'Pulse Detener para pausar el inicio automatico antes de probar.'}
+    Save-Configuration
+    $worker=Join-Path $PSScriptRoot 'Test-VxConnection.ps1'
+    $arguments='-NoProfile -ExecutionPolicy RemoteSigned -File '+(Quote-Argument $worker)+' -ConfigPath '+(Quote-Argument $script:configPath)
+    if($ListUsb){$arguments+=' -ListUsb'}
+    $script:connectionOutput=Join-Path ([IO.Path]::GetTempPath()) ('novastar-probe-'+[guid]::NewGuid().ToString('N')+'.out')
+    $script:connectionError=$script:connectionOutput+'.err';$script:connectionList=[bool]$ListUsb
+    $script:connectionProcess=Start-GuiChildProcess -Arguments $arguments -ErrorPath $script:connectionError -OutputPath $script:connectionOutput
+    $script:connectionResult.Text='Consultando. Esta prueba no cambia brillo ni contenido...'
+    Set-Notice 'Prueba de conexion en curso; esperando identidad del equipo.'
+}
+function Update-ConnectionProbe {
+    if($null -eq $script:connectionProcess -or -not $script:connectionProcess.HasExited){return}
+    $code=Get-GuiChildExitCode $script:connectionProcess
+    $output=if([IO.File]::Exists($script:connectionOutput)){[IO.File]::ReadAllText($script:connectionOutput)}else{''}
+    $detail=if([IO.File]::Exists($script:connectionError)){[IO.File]::ReadAllText($script:connectionError)}else{''}
+    $script:connectionProcess.Dispose();$script:connectionProcess=$null
+    foreach($path in @($script:connectionOutput,$script:connectionError)){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}}
+    $result=$null;try{$result=$output|ConvertFrom-Json}catch{}
+    if($null -eq $result){$script:connectionResult.Text='Prueba sin confirmar. '+$detail;Set-Notice 'Revise el resultado de conexion.' $true;return}
+    $script:connectionResult.Text=[string]$result.message
+    if($code -eq 0 -and $result.success -and $script:connectionList){
+        $selected=[string]$script:usbDevice.SelectedItem.Key
+        $script:refreshingUsb=$true
+        try{$script:usbDevice.Items.Clear();$null=$script:usbDevice.Items.Add([pscustomobject]@{Key='';DisplayName='Automático (un solo equipo)'})
+        $script:usbDevice.SelectedIndex=0
+        foreach($device in @($result.devices)){
+            $null=$script:usbDevice.Items.Add([pscustomobject]@{Key=[string]$device.Key;DisplayName=[string]$device.DisplayName})
+            if([string]$device.Key -eq $selected){$script:usbDevice.SelectedIndex=$script:usbDevice.Items.Count-1}
+        }
+        }finally{$script:refreshingUsb=$false}
+        Update-TargetVerification
+        $script:connectionResult.AppendText([Environment]::NewLine+'Seleccione el dispositivo y guarde. Si hay varios, la selección automática se rechaza.')
+    }
+    Set-Notice $(if($code -eq 0 -and $result.success){'Consulta terminada. Revise el resultado de conexion.'}else{'Conexion sin confirmar. Revise modelo, transporte y driver.'}) ($code -ne 0 -or -not $result.success)
+}
+
+
 $script:form=New-Object Windows.Forms.Form
-$script:form.Text='NovaStar VX400 · Control local v0.5.0'
+$script:form.Text='NovaStar '+$script:config.deviceModel+' · Control local v0.6.0'
 $script:form.ClientSize=New-Object Drawing.Size(1200,860)
 $script:form.MinimumSize=New-Object Drawing.Size(1050,700)
 $script:form.StartPosition='CenterScreen';$script:form.BackColor=$script:background
 $script:form.Font=New-Object Drawing.Font('Segoe UI',10)
 $header=New-Object Windows.Forms.Panel;$header.Width=1200;$header.Dock='Top';$header.Height=100;$header.BackColor=$script:blue
-$title=New-Label 'VX400  /  Control local' 23 $true;$title.ForeColor=[Drawing.Color]::White;$title.Location=New-Object Drawing.Point(24,13);$header.Controls.Add($title)
-$script:endpoint=New-Label ('{0}:{1}  ·  {2}' -f $script:config.deviceAddress,$script:config.tcpPort,$script:config.timeZone) 10
+$script:headerTitle=New-Label ($script:config.deviceModel+'  /  Control local') 23 $true;$script:headerTitle.ForeColor=[Drawing.Color]::White;$script:headerTitle.Location=New-Object Drawing.Point(24,13);$header.Controls.Add($script:headerTitle)
+$script:endpoint=New-Label '' 10
 $script:endpoint.ForeColor=[Drawing.Color]::FromArgb(219,233,255);$script:endpoint.Location=New-Object Drawing.Point(27,61);$header.Controls.Add($script:endpoint)
 $script:modeLabel=New-Label 'CONTROL LOCAL · SIN ESTADO RECIENTE' 9 $true
 $script:modeLabel.ForeColor=[Drawing.Color]::White;$script:modeLabel.AutoSize=$false;$script:modeLabel.TextAlign='MiddleRight';$script:modeLabel.Anchor='Top,Right';$script:modeLabel.Size=New-Object Drawing.Size(410,38);$script:modeLabel.Location=New-Object Drawing.Point(760,25);$header.Controls.Add($script:modeLabel)
@@ -686,7 +753,7 @@ $script:tabs=New-Object Windows.Forms.TabControl;$script:tabs.Dock='Fill';$scrip
 $script:form.Controls.Add($script:tabs);$script:form.Controls.Add($footer);$script:form.Controls.Add($header)
 
 $statePage=New-Page 'Estado';$statePage.AutoScroll=$true;$stateStack=New-Stack $statePage 6
-$stateStack.Dock='Top';$stateStack.Height=610
+$stateStack.Dock='Top';$stateStack.Height=840
 $actions=New-Flow
 $monitor=New-Button 'Iniciar monitor' $true;$monitor.Add_Click({Invoke-UiAction {Start-Controller $false}});$actions.Controls.Add($monitor)
 $control=New-Button 'Iniciar control';$control.Add_Click({Invoke-UiAction {Start-Controller $true}});$actions.Controls.Add($control)
@@ -720,6 +787,14 @@ $hold=New-Button 'Dejar en reposo';$hold.Add_Click({Invoke-UiAction {Send-Operat
 Add-StackRow $stateStack $script:operatorBanner 3 100
 $settings=New-Object Windows.Forms.GroupBox;$settings.Text='Conexión y condiciones de control';$settings.Padding=New-Object Windows.Forms.Padding(14,22,14,10)
 $settingsFlow=New-Flow;$settingsFlow.Dock='Fill';$settings.Controls.Add($settingsFlow)
+$script:model=New-Object Windows.Forms.ComboBox;$script:model.DropDownStyle='DropDownList';$script:model.Width=140
+$script:model.Items.AddRange(@('VX400','VX600'));$script:model.SelectedItem=$script:config.deviceModel
+$script:transport=New-Object Windows.Forms.ComboBox;$script:transport.DropDownStyle='DropDownList';$script:transport.Width=140
+$script:transport.Items.AddRange(@('Ethernet','USB'));$script:transport.SelectedItem=$script:config.connectionType
+$script:usbDevice=New-Object Windows.Forms.ComboBox;$script:usbDevice.DropDownStyle='DropDownList';$script:usbDevice.Width=232
+$script:usbDevice.DisplayMember='DisplayName';$script:usbDevice.ValueMember='Key'
+$null=$script:usbDevice.Items.Add([pscustomobject]@{Key='';DisplayName='Automático (un solo equipo)'})
+if($script:config.usbDeviceKey){$null=$script:usbDevice.Items.Add([pscustomobject]@{Key=$script:config.usbDeviceKey;DisplayName=$script:config.usbDeviceKey});$script:usbDevice.SelectedIndex=1}else{$script:usbDevice.SelectedIndex=0}
 $script:address=New-Object Windows.Forms.TextBox;$script:address.Text=$script:config.deviceAddress;$script:address.Width=140
 $script:port=New-Number 1 65535 $script:config.tcpPort
 $script:poll=New-Number 0.1 60 $script:config.pollIntervalSeconds 1
@@ -727,16 +802,30 @@ $script:timeout=New-Number 250 15000 $script:config.timeoutMs
 $script:offlineFailures=New-Number 1 20 $script:config.offlineFailures
 $script:onlineSuccesses=New-Number 1 20 $script:config.onlineSuccesses
 $script:maxGap=New-Number 1 300 $script:config.maximumObservationGapSeconds 1
-foreach($pair in @(@('IP del equipo',$script:address),@('Puerto TCP',$script:port),@('Consulta (s)',$script:poll),@('Espera (ms)',$script:timeout),@('Fallos para alerta',$script:offlineFailures),@('Lecturas para recuperar',$script:onlineSuccesses),@('Intervalo máximo (s)',$script:maxGap))){
+foreach($pair in @(@('Modelo original',$script:model),@('Conexión',$script:transport),@('Dispositivo USB',$script:usbDevice),@('IP del equipo',$script:address),@('Puerto TCP',$script:port),@('Consulta (s)',$script:poll),@('Espera (ms)',$script:timeout),@('Fallos para alerta',$script:offlineFailures),@('Lecturas para recuperar',$script:onlineSuccesses),@('Intervalo máximo (s)',$script:maxGap))){
     $fieldPanel=New-Object Windows.Forms.Panel;$fieldPanel.Size=New-Object Drawing.Size(244,52);$fieldPanel.Margin=New-Object Windows.Forms.Padding(0,0,15,0)
     $fieldLabel=New-Label $pair[0] 9;$fieldLabel.Location=New-Object Drawing.Point(0,0);$fieldPanel.Controls.Add($fieldLabel)
     $pair[1].Location=New-Object Drawing.Point(0,25);$fieldPanel.Controls.Add($pair[1]);$settingsFlow.Controls.Add($fieldPanel)
 }
-$script:powerVerified=New-Object Windows.Forms.CheckBox;$script:powerVerified.Text='Paneles y VX400 comparten alimentación';$script:powerVerified.AutoSize=$true;$script:powerVerified.Checked=$script:config.panelPowerCouplingVerified;$script:powerVerified.Margin=New-Object Windows.Forms.Padding(0,12,20,5)
+$script:powerVerified=New-Object Windows.Forms.CheckBox;$script:powerVerified.Text='Paneles y controlador comparten alimentación';$script:powerVerified.AutoSize=$true;$script:powerVerified.Checked=$script:config.panelPowerCouplingVerified;$script:powerVerified.Margin=New-Object Windows.Forms.Padding(0,12,20,5)
 $script:startupVerified=New-Object Windows.Forms.CheckBox;$script:startupVerified.Text='Arranque en negro comprobado';$script:startupVerified.AutoSize=$true;$script:startupVerified.Checked=$script:config.startupProtectionVerified;$script:startupVerified.Margin=New-Object Windows.Forms.Padding(0,12,20,5)
 $settingsFlow.SetFlowBreak($fieldPanel,$true);$settingsFlow.Controls.Add($script:powerVerified);$settingsFlow.Controls.Add($script:startupVerified)
-Add-StackRow $stateStack $settings 4 230
-$note=New-Label 'Monitor: consulta sin modificar el VX400. Control: ejecuta las secuencias guardadas. Una pérdida de comunicación no confirma un apagado eléctrico.' 9;$note.AutoSize=$false
+$connectionActions=New-Flow;$connectionActions.Width=950;$connectionActions.Height=44
+$script:scanUsb=New-Button 'Buscar USB';$script:scanUsb.Add_Click({Invoke-UiAction {Start-ConnectionProbe -ListUsb}});$connectionActions.Controls.Add($script:scanUsb)
+$script:probeConnection=New-Button 'Probar conexión' $true;$script:probeConnection.Add_Click({Invoke-UiAction {Start-ConnectionProbe}});$connectionActions.Controls.Add($script:probeConnection)
+$settingsFlow.SetFlowBreak($script:startupVerified,$true);$settingsFlow.Controls.Add($connectionActions);$settingsFlow.SetFlowBreak($connectionActions,$true)
+$script:connectionResult=New-Object Windows.Forms.TextBox;$script:connectionResult.Multiline=$true;$script:connectionResult.ReadOnly=$true;$script:connectionResult.ScrollBars='Vertical';$script:connectionResult.Width=900;$script:connectionResult.Height=75
+$script:connectionResult.Text='Probar conexión solo consulta la identidad. USB usa el driver NovaStar/libusb0 instalado; cierre las aplicaciones que estén usando ese USB. En el equipo: Communication > LAN Preferred o USB Preferred según la selección.'
+$settingsFlow.Controls.Add($script:connectionResult)
+$script:model.Add_SelectedIndexChanged({Update-TargetVerification})
+$script:transport.Add_SelectedIndexChanged({Update-TargetVerification;Update-ConnectionFields})
+$script:usbDevice.Add_SelectedIndexChanged({Update-TargetVerification})
+$script:address.Add_TextChanged({Update-TargetVerification})
+$script:port.Add_ValueChanged({Update-TargetVerification})
+Update-TargetVerification
+Update-ConnectionFields;Update-ConnectionLabels
+Add-StackRow $stateStack $settings 4 450
+$note=New-Label 'Monitor: consulta sin modificar el equipo. Control: ejecuta las secuencias guardadas. Una pérdida de comunicación no confirma un apagado eléctrico.' 9;$note.AutoSize=$false
 Add-StackRow $stateStack $note 5 43
 
 $schedulePage=New-Page 'Horarios';$scheduleStack=New-Stack $schedulePage 5
@@ -841,6 +930,7 @@ $logIntro=New-Label 'Actividad reciente del controlador' 17 $true;Add-StackRow $
 $logHint=New-Label 'Últimos 80 eventos. Una alerta de comunicación no permite deducir si el equipo tiene alimentación eléctrica.' 10;Add-StackRow $logStack $logHint 1 35
 $script:logBox=New-Object Windows.Forms.TextBox;$script:logBox.Multiline=$true;$script:logBox.ReadOnly=$true;$script:logBox.ScrollBars='Both';$script:logBox.WordWrap=$false;$script:logBox.BackColor=[Drawing.Color]::White;$script:logBox.Font=New-Object Drawing.Font('Consolas',10);$script:logBox.BorderStyle='FixedSingle';Add-StackRow $logStack $script:logBox 2
 
+
 function Get-ControlCount($Control){$count=1;foreach($child in $Control.Controls){$count+=Get-ControlCount $child};return $count}
 function Invoke-GuiSmoke {
     # Only fixture paths are passed here by tests. No timer, task lookup, network, real controller or installer. Harmless child fixtures test process completion.
@@ -852,6 +942,22 @@ function Invoke-GuiSmoke {
         Save-Configuration
         $saved=Read-VxPlanConfig -Path $script:configPath
         if($saved.deviceAddress -ne $script:config.deviceAddress){throw 'Smoke: config save round-trip failed.'}
+        $script:model.SelectedItem='VX400';$script:transport.SelectedItem='USB';Save-Configuration
+        $connectionSaved=Read-VxPlanConfig -Path $script:configPath
+        if($connectionSaved.deviceModel -ne 'VX400' -or $connectionSaved.connectionType -ne 'USB' -or $script:address.Enabled -or -not $script:usbDevice.Enabled){throw 'Smoke: USB/model selection not preserved.'}
+        $null=$script:usbDevice.Items.Add([pscustomobject]@{Key='fixture-A';DisplayName='Fixture A'})
+        $null=$script:usbDevice.Items.Add([pscustomobject]@{Key='fixture-B';DisplayName='Fixture B'})
+        $script:powerVerified.Checked=$true;$script:startupVerified.Checked=$true;$script:usbDevice.SelectedIndex=$script:usbDevice.Items.Count-2
+        if($script:powerVerified.Checked -or $script:startupVerified.Checked){throw 'Smoke: changed USB target retained installation confirmations.'}
+        $script:powerVerified.Checked=$true;$script:startupVerified.Checked=$true
+        $sameTarget=$script:usbDevice.SelectedIndex;$script:usbDevice.SelectedIndex=$sameTarget
+        if(-not $script:powerVerified.Checked -or -not $script:startupVerified.Checked){throw 'Smoke: unchanged target cleared installation confirmations.'}
+        $script:usbDevice.SelectedIndex=$script:usbDevice.Items.Count-1
+        if($script:powerVerified.Checked -or $script:startupVerified.Checked){throw 'Smoke: second USB target retained confirmations.'}
+        $script:usbDevice.SelectedIndex=0
+        $script:model.SelectedItem=$saved.deviceModel;$script:transport.SelectedItem=$saved.connectionType;Save-Configuration
+        $script:probeConnection.PerformClick()
+        if($script:notice.Text -ne 'Prueba de conexion deshabilitada en SmokeTest.'){throw 'Smoke: connection test handler missing.'}
         $oldMinutes=$script:phaseGrid.Rows[0].Cells['minutes'].Value
         $script:phaseGrid.Rows[0].Cells['minutes'].Value='24.5';$script:poll.Value=1.5
         $windowIndex=$script:windowGrid.Rows.Add('08:00','18:00',$false,$true,$false,$false,$false,$false,$false)
@@ -932,7 +1038,7 @@ function Invoke-GuiSmoke {
             $script:panelProcess=Start-GuiChildProcess -Arguments $fixtureArgs -ErrorPath $script:panelError -OutputPath $script:panelOutput
             $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
             while($null -ne $script:panelProcess){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: manual result did not finish.'};Invoke-Tick;Start-Sleep -Milliseconds 25}
-            if($script:notice.Text -ne 'Mando manual confirmado por el VX400.' -or $script:panelResult.Text -notmatch 'confirmado por protocolo'){
+            if($script:notice.Text -ne 'Mando manual confirmado por el controlador.' -or $script:panelResult.Text -notmatch 'confirmado por protocolo'){
                 throw ('Smoke: successful asynchronous '+$display+' reported an error: '+$script:panelResult.Text+' / '+$script:notice.Text)
             }
         }
@@ -976,6 +1082,19 @@ function Invoke-GuiSmoke {
         $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
         while($null -ne $script:recoveryProcess){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: recovery success did not finish.'};Invoke-Tick;Start-Sleep -Milliseconds 25}
         if($script:forceRecovery.Enabled -or $script:recoveryResult.Text -notmatch 'no queda confirmada' -or $script:recoverySnapshot){throw 'Smoke: successful recovery retained force or claimed display output.'}
+        foreach($probeCase in @('list','success','failure')){
+            $probeFixture=if($probeCase -eq 'list'){@{success=$true;message='Fixture USB';devices=@(@{Key='fixture-USB';DisplayName='Fixture USB detected'})}}elseif($probeCase -eq 'success'){@{success=$true;message='VX600 confirmado por Ethernet. Fixture sin hardware.'}}else{@{success=$false;message='Fixture: driver USB no disponible'}}
+            $payload=$probeFixture|ConvertTo-Json -Depth 5 -Compress
+            $fixtureCode=if($probeCase -eq 'failure'){2}else{0}
+            [IO.File]::WriteAllText($fixtureScript,("Write-Output '"+$payload+"'; exit "+$fixtureCode))
+            $script:connectionList=($probeCase -eq 'list');$script:connectionOutput=Join-Path $temporary 'probe.out';$script:connectionError=Join-Path $temporary 'probe.err'
+            $script:connectionProcess=Start-GuiChildProcess -Arguments $fixtureArgs -ErrorPath $script:connectionError -OutputPath $script:connectionOutput
+            $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
+            while($null -ne $script:connectionProcess){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: connection result did not finish.'};Invoke-Tick;Start-Sleep -Milliseconds 25}
+            if($script:connectionResult.Text -notmatch [regex]::Escape([string]$probeFixture.message)){throw 'Smoke: probe result missing.'}
+            if($probeCase -eq 'list' -and @($script:usbDevice.Items|Where-Object{$_.Key -eq 'fixture-USB'}).Count -ne 1){throw 'Smoke: USB discovery selector not refreshed.'}
+            if($probeCase -eq 'failure' -and $script:notice.Text -notmatch 'sin confirmar'){throw 'Smoke: failed probe claimed success.'}
+        }
         $script:panelResult.Text='Sin mandos enviados al hardware. Resultados de procesos verificados con fixtures.'
         Set-Notice 'Vista de prueba. No se enviaron mandos.'
 
@@ -1010,5 +1129,6 @@ try{
     if($null -ne $script:panelProcess){$script:panelProcess.Dispose()}
     if($null -ne $script:installerProcess){$script:installerProcess.Dispose()}
     if($null -ne $script:recoveryProcess){$script:recoveryProcess.Dispose()}
+    if($null -ne $script:connectionProcess){$script:connectionProcess.Dispose()}
     if($script:recoverySnapshot -and [IO.File]::Exists($script:recoverySnapshot)){[IO.File]::Delete($script:recoverySnapshot)}
 }

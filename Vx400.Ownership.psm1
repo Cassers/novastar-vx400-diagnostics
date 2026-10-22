@@ -97,6 +97,10 @@ function Get-VxEndpointFromConfig([string]$Path){
     $real=Resolve-VxOwnershipPath $Path
     if((Get-Item -LiteralPath $real).Length -gt 262144){throw 'Config exceeds ownership inspection bound.'}
     $config=Get-Content -LiteralPath $real -Raw -Encoding UTF8|ConvertFrom-Json
+    if($null -ne $config.PSObject.Properties['connectionType']){
+        if($config.connectionType -isnot [string] -or $config.connectionType -cnotin @('Ethernet','USB')){throw 'Unknown controller connection type.'}
+        if($config.connectionType -ceq 'USB'){return 'USB:LOCAL'}
+    }
     $ip=$null
     if($config.deviceAddress -isnot [string] -or -not [Net.IPAddress]::TryParse($config.deviceAddress,[ref]$ip) -or $ip.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or $config.deviceAddress -cne $ip.ToString() -or $ip.GetAddressBytes()[0] -eq 0 -or $ip.GetAddressBytes()[0] -ge 224){throw 'Config endpoint requires canonical unicast IPv4.'}
     if($config.tcpPort -isnot [int] -and $config.tcpPort -isnot [long]){throw 'Config port must be integer.'}

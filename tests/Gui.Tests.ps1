@@ -13,7 +13,7 @@ $OutputDirectory=[IO.Path]::GetFullPath($OutputDirectory)
 $null=[IO.Directory]::CreateDirectory($OutputDirectory)
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('vx400-gui-test-'+[guid]::NewGuid().ToString('N'))
 $null=[IO.Directory]::CreateDirectory($fixture)
-$files=@('Control-Vx400.ps1','Vx400.Schedule.psm1','plan.config.json')
+$files=@('Control-Vx400.ps1','Vx400.Schedule.psm1','Vx.Connection.psm1','Vx400.Protocol.psm1','plan.config.json')
 $hashes=@{}
 foreach($name in $files){$hashes[$name]=(Get-FileHash -LiteralPath (Join-Path $root $name) -Algorithm SHA256).Hash}
 try{

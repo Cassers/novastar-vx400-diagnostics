@@ -1,4 +1,10 @@
-# Diagnóstico y monitor permanente del NovaStar VX400 original
+# Control local NovaStar VX400 / VX600 — v0.6.0
+
+Extraiga el paquete **completo** y abra **`Abrir-Control-NovaStar.bat`**. Seleccione el modelo original y **Ethernet** o **USB** en Estado. **Probar conexión** consulta la identidad sin cambiar brillo ni contenido. USB añade **Buscar USB** y selección de dispositivo usando el driver original NovaStar/libusb0 instalado; NovaLCT no necesita estar abierto.
+
+Nueva configuración: VX600/Ethernet. Las configuraciones anteriores se conservan como VX400/Ethernet. Detenga el motor antes de cambiar de conexión. Modelos Pro no incluidos. No hay cambio automático de transporte. La primera prueba física de cada enlace se hace en el equipo del cliente.
+
+[Pasos de prueba y requisitos USB/Ethernet](docs/vx600-usb-ethernet.md). Se mantienen secado manual, brillo/negro/entrada/blanco, horarios, solicitudes y recuperación de nuestras instancias. El nombre de los scripts y de la instalación anterior se conserva para poder actualizarla.
 
 ## App nativa Windows — v0.5.0
 

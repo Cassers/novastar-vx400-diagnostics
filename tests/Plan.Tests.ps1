@@ -14,6 +14,17 @@ function Copy-Config{return (Get-Content -LiteralPath (Join-Path $PSScriptRoot '
 function Request([string]$Start,[string]$End,[bool]$Cancelled=$false){return [pscustomobject]@{id=[Guid]::NewGuid().ToString();title='Prueba';startUtc=$Start;endUtc=$End;cancelled=$Cancelled}}
 try{
     $c=Read-VxPlanConfig (Join-Path $PSScriptRoot '../plan.config.json')
+    Assert ($c.deviceModel -ceq 'VX600' -and $c.connectionType -ceq 'Ethernet' -and $c.usbDeviceKey -ceq '') distributedconnectiondefaults
+    $legacy=Copy-Config
+    foreach($name in @('deviceModel','connectionType','usbDeviceKey')){$legacy.PSObject.Properties.Remove($name)}
+    $normalized=Read-VxPlanConfig (Write-Json $legacy)
+    Assert ($normalized.deviceModel -ceq 'VX400' -and $normalized.connectionType -ceq 'Ethernet' -and $normalized.usbDeviceKey -ceq '') legacyconnectiondefaults
+    foreach($bad in @('VX600 Pro','VX600S','VX1000','vx600','')){$invalid=Copy-Config;$invalid.deviceModel=$bad;$path=Write-Json $invalid;Throws {Read-VxPlanConfig $path} unsupportedmodel}
+    foreach($bad in @('Auto','WiFi','usb','')){$invalid=Copy-Config;$invalid.connectionType=$bad;$path=Write-Json $invalid;Throws {Read-VxPlanConfig $path} invalidtransport}
+    foreach($bad in @($null,1,('a'*257),"bad`nkey",('bad'+[char]0x7F+'key'))){$invalid=Copy-Config;$invalid.usbDeviceKey=$bad;$path=Write-Json $invalid;Throws {Read-VxPlanConfig $path} invalidusbkey}
+    $invalid=Copy-Config;$invalid|Add-Member -NotePropertyName connectionTypo -NotePropertyValue 'USB';$path=Write-Json $invalid;Throws {Read-VxPlanConfig $path} unknownfieldstillrejected
+    $usb=Copy-Config;$usb.connectionType='USB';$usb.usbDeviceKey='pinned-device';$path=Write-Json $usb
+    Assert ((Read-VxPlanConfig $path).usbDeviceKey -ceq 'pinned-device') usbconfigofflinevalidation
     Near (Get-VxProfileSeconds $c.profiles.dry) (188*60) dry188
     Near (Get-VxProfileSeconds $c.profiles.preheat) (240*60) preheat240
     Near (Get-VxProfileSeconds $c.profiles.cooldown) (36*60) cooldown36

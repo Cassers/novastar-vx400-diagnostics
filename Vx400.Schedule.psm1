@@ -1,5 +1,6 @@
 ﻿#requires -Version 5.1
 Set-StrictMode -Version Latest
+Import-Module (Join-Path $PSScriptRoot 'Vx.Connection.psm1')
 
 function Read-VxSharedText([string]$Path) {
     # Readers permit atomic replacement while retaining a consistent open-file snapshot.
@@ -77,7 +78,8 @@ function Read-VxPlanConfig {
     if($ManualControl -and -not $EnableControl){throw 'ManualControl requires EnableControl.'}
     if ((Get-Item -LiteralPath $Path).Length -gt 262144) { throw 'Config exceeds 256 KiB.' }
     $config = Read-VxSharedText -Path $Path | ConvertFrom-Json
-    Assert-VxPlanObject $config @('schemaVersion','deviceAddress','tcpPort','pollIntervalSeconds','timeoutMs','offlineFailures','onlineSuccesses','maximumObservationGapSeconds','timeZone','profileAccepted','profileSource','panelPowerCouplingVerified','startupProtectionVerified','conditioningPattern','idleBrightnessPercent','operatingBrightnessPercent','dailyStarts','operatingWindows','profiles') 'config'
+    $config=Complete-VxConnectionConfig $config
+    Assert-VxPlanObject $config @('deviceModel','connectionType','usbDeviceKey','schemaVersion','deviceAddress','tcpPort','pollIntervalSeconds','timeoutMs','offlineFailures','onlineSuccesses','maximumObservationGapSeconds','timeZone','profileAccepted','profileSource','panelPowerCouplingVerified','startupProtectionVerified','conditioningPattern','idleBrightnessPercent','operatingBrightnessPercent','dailyStarts','operatingWindows','profiles') 'config'
     Assert-VxPlanNumber $config.schemaVersion 1 1 schemaVersion -Integer
     $ip = $null
     if ($config.deviceAddress -isnot [string] -or -not [Net.IPAddress]::TryParse($config.deviceAddress,[ref]$ip) -or

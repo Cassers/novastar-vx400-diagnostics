@@ -1,5 +1,8 @@
 {
   "schemaVersion": 1,
+  "deviceModel": "VX600",
+  "connectionType": "Ethernet",
+  "usbDeviceKey": "",
   "deviceAddress": "192.168.0.10",
   "tcpPort": 5200,
   "pollIntervalSeconds": 2,

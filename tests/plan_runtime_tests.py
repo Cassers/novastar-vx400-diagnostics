@@ -27,8 +27,11 @@ def atomic_json(path, value):
 
 
 class PlanDevice(FakeDevice):
-    def __init__(self, drop_read_at=None, drop_brightness=False, offline_writes=False, read_gate=None):
+    def __init__(self, drop_read_at=None, drop_brightness=False, offline_writes=False, read_gate=None,
+                 model_id=0x6211, model_at_read=None):
         super().__init__()
+        self.model_id = model_id
+        self.model_at_read = model_at_read or {}
         self.offline_writes = offline_writes
         self.read_gate = read_gate
         self.read_count = 0
@@ -55,6 +58,7 @@ class PlanDevice(FakeDevice):
                     address = struct.unpack_from('<I', request, 12)[0]
                     if request[10] == 0:
                         self.read_count += 1
+                        self.model_id = self.model_at_read.get(self.read_count, self.model_id)
                         if self.read_count in self.drop_read_at:
                             self.failed_at = len(self.requests)-1
                             continue
@@ -64,7 +68,7 @@ class PlanDevice(FakeDevice):
                         self.drop_brightness = False
                         self.failed_at = len(self.requests)-1
                         continue
-                    payload = b'' if request[10] == 1 else b'\x11\x62'
+                    payload = b'' if request[10] == 1 else struct.pack('<H', self.model_id)
                     if self.read_gate is not None and request[10] == 0:
                         self.read_gate.wait(6)
                         self.read_gate = None
@@ -89,7 +93,8 @@ def brightness(request):
 class PlanRuntimeTests(unittest.TestCase):
     def config(self, directory, device, slow=False):
         config = json.loads((ROOT/'plan.config.json').read_text(encoding='utf-8-sig'))
-        config.update(deviceAddress='127.0.0.1', tcpPort=device.port, pollIntervalSeconds=.1, timeoutMs=250,
+        # Existing scenarios explicitly exercise the legacy VX400 fixture.
+        config.update(deviceModel='VX400', connectionType='Ethernet', usbDeviceKey='', deviceAddress='127.0.0.1', tcpPort=device.port, pollIntervalSeconds=.1, timeoutMs=250,
                       onlineSuccesses=1, offlineFailures=2, maximumObservationGapSeconds=2,
                       panelPowerCouplingVerified=True, startupProtectionVerified=True,
                       dailyStarts=[], operatingWindows=[])
@@ -153,6 +158,104 @@ class PlanRuntimeTests(unittest.TestCase):
               '-ConfigPath', str(path), '-DataDirectory', str(directory), '-BrightnessPercent', str(value), '-Display', display]
         if enabled: args.append('-EnableControl')
         return subprocess.run(args, capture_output=True, text=True, timeout=12)
+
+    def test_legacy_config_without_connection_fields_still_selects_vx400(self):
+        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+            path, config = self.config(directory, device)
+            for field in ('deviceModel', 'connectionType', 'usbDeviceKey'):
+                del config[field]
+            atomic_json(path, config)
+            self.finish(self.launch(directory, path, control=False, polls=3))
+            state = self.state(directory)
+            self.assertEqual(state['deviceModel'], 'VX400')
+            self.assertEqual(state['connectionType'], 'Ethernet')
+            self.assertEqual(state['communication'], 'reachable')
+            self.assertFalse(writes(device))
+
+    def test_both_original_models_monitor_without_writes(self):
+        for model, model_id in [('VX400', 0x6211), ('VX600', 0x620E)]:
+            with self.subTest(model=model), PlanDevice(model_id=model_id) as device, tempfile.TemporaryDirectory() as directory:
+                path, config = self.config(directory, device)
+                config['deviceModel'] = model
+                atomic_json(path, config)
+                self.finish(self.launch(directory, path, control=False, polls=3))
+                state = self.state(directory)
+                self.assertEqual(state['deviceModel'], model)
+                self.assertEqual(state['connectionType'], 'Ethernet')
+                self.assertEqual(state['connectionKey'], f'127.0.0.1:{device.port}')
+                self.assertEqual(state['deviceAddress'], '127.0.0.1')
+                self.assertEqual(state['tcpPort'], device.port)
+                self.assertEqual(state['communication'], 'reachable')
+                self.assertFalse(writes(device))
+                self.assertFalse(device.errors)
+
+    def test_both_original_models_manual_black_and_white(self):
+        for model, model_id in [('VX400', 0x6211), ('VX600', 0x620E)]:
+            with self.subTest(model=model), PlanDevice(model_id=model_id) as device, tempfile.TemporaryDirectory() as directory:
+                path, config = self.config(directory, device)
+                config['deviceModel'] = model
+                atomic_json(path, config)
+                for display, expected in [('Blackout', [b'\x05\x00', b'\x19']),
+                                          ('White', [b'\x05\x00', b'\x19', b'\x06\x04'])]:
+                    marker = len(device.requests)
+                    result = self.manual_command(directory, path, display=display)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    status = json.loads(result.stdout)
+                    self.assertEqual(status['deviceModel'], model)
+                    self.assertEqual(status['connectionType'], 'Ethernet')
+                    self.assertEqual([r[18:-2] for r in device.requests[marker:] if r[10] == 1], expected)
+                self.assertFalse(device.errors)
+
+    def test_both_original_models_manual_dry_complete(self):
+        for model, model_id in [('VX400', 0x6211), ('VX600', 0x620E)]:
+            with self.subTest(model=model), PlanDevice(model_id=model_id) as device, tempfile.TemporaryDirectory() as directory:
+                path, config = self.config(directory, device)
+                config['deviceModel'] = model
+                atomic_json(path, config)
+                self.finish(self.launch(directory, path, manual=True, polls=100))
+                self.assertIn('manual_dry_completed', [e['event'] for e in self.events(directory)])
+                values = [r[18:-2] for r in writes(device)]
+                self.assertEqual(values[:3], [b'\x05\x00', b'\x19', b'\x06\x04'])
+                self.assertEqual(values[-1], b'\x05\x00')
+                self.assertEqual([brightness(r) for r in writes(device) if brightness(r) is not None][-1], 25)
+                self.assertFalse(device.errors)
+
+    def test_wrong_selected_model_blocks_manual_dry_and_recovery_writes(self):
+        for selected, actual in [('VX600', 0x6211), ('VX400', 0x620E), ('VX600', 0x0000)]:
+            with self.subTest(selected=selected, actual=actual), PlanDevice(model_id=actual) as device, tempfile.TemporaryDirectory() as directory:
+                path, config = self.config(directory, device)
+                config['deviceModel'] = selected
+                atomic_json(path, config)
+                result = self.manual_command(directory, path)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn('Wrong ModelID', result.stderr)
+                self.finish(self.launch(directory, path, manual=True), code=2)
+                self.assertFalse(writes(device))
+                self.assertFalse(device.errors)
+
+    def test_changed_model_clears_trust_before_recovery_or_finally_writes(self):
+        with PlanDevice(model_at_read={3: 0x620E}) as device, tempfile.TemporaryDirectory() as directory:
+            path, _ = self.config(directory, device)
+            self.finish(self.launch(directory, path, polls=5))
+            reads = [i for i, request in enumerate(device.requests) if request[10] == 0]
+            self.assertGreaterEqual(len(reads), 3)
+            self.assertTrue(writes(device))
+            self.assertFalse([r for r in device.requests[reads[2]:] if r[10] == 1])
+            self.assertTrue(self.state(directory)['operatorPending'])
+
+    def test_unsupported_model_or_transport_rejected_before_network_and_storage(self):
+        for field, value in [('deviceModel', 'VX600 Pro'), ('deviceModel', 'VX600S'),
+                             ('connectionType', 'Auto'), ('connectionType', 'WiFi')]:
+            with self.subTest(field=field, value=value), PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+                path, config = self.config(directory, device)
+                config[field] = value
+                atomic_json(path, config)
+                result = self.manual_command(directory, path)
+                self.assertEqual(result.returncode, 2)
+                self.finish(self.launch(directory, path, manual=True), code=2)
+                self.assertFalse(device.requests)
+                self.assertFalse((Path(directory)/'estado.json').exists())
+                self.assertFalse((Path(directory)/'watcher.lock').exists())
 
     def test_manual_panel_acknowledges_low_brightness_before_white_and_normal(self):
         with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:

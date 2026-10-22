@@ -14,16 +14,19 @@ try {
 catch {Write-Error $_ -ErrorAction Continue; exit 2}
 if ($ValidateOnly) {Write-Output ('Plan valid. '+$(if($EnableControl){'CONTROL'}else{'MONITOR (read only)'}));exit 0}
 Import-Module (Join-Path $PSScriptRoot 'Vx400.Protocol.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'Vx.Connection.psm1')
 $utf8=New-Object Text.UTF8Encoding($false)
 $script:status=[ordered]@{
     schemaVersion=1;mode=$(if($EnableControl){'control'}else{'monitor'});execution=$(if($ManualDry){'manual-dry'}else{'scheduled'});state='BOOT';communication='unknown'
     brightnessRequested=$null;phase=$null;progressPercent=0;remainingSeconds=0;profileKey='';updatedUtc=$null
     lastSuccessfulReadUtc=$null;lastEvent=$null;manualPauseRejectedId='';operatorPending=$false;operatorGateId=$null;operatorMessage='';operatorLastCommandId=$null;operatorConsumedCommandIds=@()
     deviceAddress=$config.deviceAddress;tcpPort=$config.tcpPort
+    deviceModel=$config.deviceModel;connectionType=$config.connectionType;connectionKey=(Get-VxConnectionKey $config)
 }
 $mutex=$null;$ownsMutex=$false;$fileLock=$null;$exitCode=0
 $clock=[Diagnostics.Stopwatch]::StartNew()
 $script:seq=0;$script:trusted=$false;$script:wrote=$false;$script:fault=$false
+$script:identityReply=$null
 $script:lastReadStamp=0L;$script:lastReadUtc=[DateTimeOffset]::MinValue
 $script:brightnessByte=-1;$script:pattern='unknown'
 $script:activeMode='';$script:activeKey='';$script:profile=@();$script:profileStart=0.0
@@ -51,15 +54,21 @@ function Write-PlanEvent([string]$Name,[string]$Detail) {
 function Next-Sequence {$script:seq=($script:seq+1)%256;return [byte]$script:seq}
 function Exchange-Plan([byte[]]$Packet) {
     $watch=[Diagnostics.Stopwatch]::StartNew();$utc=[DateTimeOffset]::UtcNow
-    $reply=Invoke-VxExchange -DeviceAddress $config.deviceAddress -TcpPort $config.tcpPort -Request $Packet -TimeoutMs $config.timeoutMs
+    $reply=Invoke-VxConfiguredExchange -Config $config -Request $Packet
     if($watch.Elapsed.TotalSeconds -gt $config.maximumObservationGapSeconds -or [Math]::Abs(([DateTimeOffset]::UtcNow-$utc).TotalSeconds-$watch.Elapsed.TotalSeconds) -gt $config.maximumObservationGapSeconds){throw 'Observation gap during exchange; response no longer fresh.'}
     return $reply
+}
+function Assert-PlanIdentity {
+    # Recovery keeps the existing freshness exception, never the selected-model exception.
+    if(-not $script:trusted){throw 'Unverified ModelID; control write blocked.'}
+    Assert-VxDeviceIdentity -Config $config -Reply $script:identityReply
 }
 function Assert-PlanFresh {
     $age=([Diagnostics.Stopwatch]::GetTimestamp()-$script:lastReadStamp)/[double][Diagnostics.Stopwatch]::Frequency
     if($age -gt $config.maximumObservationGapSeconds -or [Math]::Abs(([DateTimeOffset]::UtcNow-$script:lastReadUtc).TotalSeconds-$age) -gt $config.maximumObservationGapSeconds){throw 'Stale successful ModelID read; refusing display advancement.'}
 }
 function Send-PlanDisplay([string]$Mode,[switch]$Recovery) {
+    Assert-PlanIdentity
     if(-not $Recovery){Assert-PlanFresh}
     $script:wrote=$true
     try{$null=Exchange-Plan (New-VxDisplayRequest -Mode $Mode -Sequence (Next-Sequence));$script:pattern=$Mode}
@@ -67,6 +76,7 @@ function Send-PlanDisplay([string]$Mode,[switch]$Recovery) {
 }
 function Send-PlanBrightness([double]$Percent,[switch]$Force,[switch]$Recovery) {
     $value=[int][Math]::Floor([Math]::Max([double]0,[Math]::Min([double]100,$Percent))*255/100)
+    Assert-PlanIdentity
     if(-not $Recovery){Assert-PlanFresh}
     if(-not $Force -and $value -eq $script:brightnessByte){return}
     $script:wrote=$true
@@ -174,7 +184,7 @@ function Read-OperatorChoice {
 
 try {
     $sha=[Security.Cryptography.SHA256]::Create()
-    try{$endpoint=[BitConverter]::ToString($sha.ComputeHash($utf8.GetBytes("$($config.deviceAddress):$($config.tcpPort)"))).Replace('-','')}finally{$sha.Dispose()}
+    try{$endpoint=[BitConverter]::ToString($sha.ComputeHash($utf8.GetBytes((Get-VxConnectionKey $config)))).Replace('-','')}finally{$sha.Dispose()}
     $prefix=if($env:OS -eq 'Windows_NT'){'Global\'}else{''}
     $mutex=New-Object Threading.Mutex($false,($prefix+'NovaStarVX400-'+$endpoint))
     try{$ownsMutex=$mutex.WaitOne(0)}catch [Threading.AbandonedMutexException]{$ownsMutex=$true}
@@ -236,7 +246,8 @@ try {
         $readError=$null
         try{
             $reply=Exchange-Plan (New-VxReadRequest -Address 2 -Length 2 -Sequence (Next-Sequence))
-            if($reply.Payload.Length -ne 2 -or [BitConverter]::ToUInt16($reply.Payload,0) -ne 0x6211){$script:trusted=$false;throw 'Wrong ModelID: expected original VX400 0x6211.'}
+            try{Assert-VxDeviceIdentity -Config $config -Reply $reply}catch{$script:trusted=$false;$script:identityReply=$null;throw}
+            $script:identityReply=$reply
             $script:trusted=$true;$script:lastReadStamp=[Diagnostics.Stopwatch]::GetTimestamp();$script:lastReadUtc=[DateTimeOffset]::UtcNow
             $script:status.lastSuccessfulReadUtc=$script:lastReadUtc.ToString('o')
         }catch{$readError=$_.Exception.Message}

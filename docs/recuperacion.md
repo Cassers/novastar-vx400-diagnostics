@@ -28,3 +28,7 @@ La parada ordenada de un controlador activo puede intentar Blackout y brillo cer
 La CI ejecuta las reglas de identificación en Windows PowerShell 5.1 y cierra únicamente procesos de prueba contra loopback: parada normal, force con snapshot revisado, rechazo de un propietario nuevo y liberación del mutex. La GUI comprueba resultados asíncronos de éxito/fallo y produce capturas. La elevación UAC requiere revisión manual en el PC del operador.
 
 Reversión: retirar botones/worker/módulo de recuperación y sus pruebas; la exclusión y el motor de secuencias siguen funcionando. El arreglo de resultados asíncronos es independiente y se conserva.
+
+## Relevo de la ventana al elevar permisos
+
+Al recuperar desde una ventana sin privilegios, la sucesora elevada espera hasta 15 segundos a que la anterior libere su bloqueo. La recuperación empieza después de mostrar la nueva ventana. Las aperturas duplicadas ordinarias siguen fallando inmediatamente. La prueba GuiHandoff ejecuta la función de bloqueo de producción en procesos separados y cubre rechazo normal, relevo correcto y espera agotada; no prueba el diálogo UAC físico. El cierre de la ventana conserva el motor de control en segundo plano.

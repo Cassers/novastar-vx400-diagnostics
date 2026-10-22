@@ -1,6 +1,6 @@
 ﻿#requires -Version 5.1
 [CmdletBinding()]
-param([string]$ConfigPath='', [string]$DataDirectory='', [switch]$SmokeTest, [string]$ScreenshotPath='', [switch]$RecoverOnOpen)
+param([string]$ConfigPath='', [string]$DataDirectory='', [switch]$SmokeTest, [string]$ScreenshotPath='', [switch]$RecoverOnOpen, [switch]$GuiHandoff)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 # Resolve defaults here: Windows PowerShell 5.1 can evaluate parameter defaults before PSScriptRoot.
@@ -308,7 +308,7 @@ function Set-GuiMutex([string]$Directory) {
     try{$key=[BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Directory.ToLowerInvariant()))).Replace('-','')}finally{$hash.Dispose()}
     $nextMutex=New-Object Threading.Mutex($false,('Local\NovaStar-VX400-GUI-'+$key))
     $owns=$false
-    try{$owns=$nextMutex.WaitOne(0)}catch [Threading.AbandonedMutexException]{$owns=$true}
+    try{$owns=$nextMutex.WaitOne($(if($GuiHandoff){15000}else{0}))}catch [Threading.AbandonedMutexException]{$owns=$true}
     if(-not $owns){$nextMutex.Dispose();throw 'Ya hay una ventana de control abierta para esta carpeta de datos.'}
     if($script:ownsMutex){$script:mutex.ReleaseMutex();$script:mutex.Dispose()}
     $script:mutex=$nextMutex;$script:ownsMutex=$true
@@ -406,7 +406,7 @@ function Start-ControlRecovery([bool]$Force=$false) {
     if($null -ne $script:connectionProcess -or $null -ne $script:recoveryProcess -or $null -ne $script:panelProcess -or $null -ne $script:panelPending -or $null -ne $script:installerProcess){throw 'Espere a que termine la operacion actual.'}
     if($Force -and (-not $script:recoveryNeedsForce -or -not [IO.File]::Exists($script:recoverySnapshot))){throw 'Primero pulse Recuperar control y revise los procesos detectados.'}
     if(-not (Test-Admin)){
-        $arguments='-NoProfile -STA -ExecutionPolicy RemoteSigned -File '+(Quote-Argument $PSCommandPath)+' -ConfigPath '+(Quote-Argument $script:configPath)+' -DataDirectory '+(Quote-Argument $script:dataDirectory)+' -RecoverOnOpen'
+        $arguments='-NoProfile -STA -ExecutionPolicy RemoteSigned -File '+(Quote-Argument $PSCommandPath)+' -ConfigPath '+(Quote-Argument $script:configPath)+' -DataDirectory '+(Quote-Argument $script:dataDirectory)+' -RecoverOnOpen -GuiHandoff'
         $null=Start-Process -FilePath (Get-WindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -Verb RunAs
         $script:form.Close();return
     }
@@ -1118,7 +1118,8 @@ try{
     else{
         Set-GuiMutex $script:dataDirectory
         Invoke-UiAction {Update-Requests}
-        Invoke-Tick;if($RecoverOnOpen){Invoke-UiAction {Start-ControlRecovery $false}};$timer.Start();$null=$script:form.ShowDialog()
+        if($RecoverOnOpen){$script:form.Add_Shown({Invoke-UiAction {Start-ControlRecovery $false}})}
+        $timer.Start();$null=$script:form.ShowDialog()
     }
 }finally{
     $timer.Stop();$timer.Dispose();$script:form.Dispose()

@@ -15,6 +15,9 @@ jobs:
         run: |
           .\tests\Connection.Tests.ps1
           .\tests\Usb.Tests.ps1
+      - name: GUI elevation mutex handoff
+        shell: powershell
+        run: .\tests\GuiHandoff.Tests.ps1
       - name: Gradual-ramp planning without network
         shell: powershell
         run: .\tests\Ramp.Tests.ps1

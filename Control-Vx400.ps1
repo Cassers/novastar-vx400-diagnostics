@@ -919,7 +919,7 @@ $recoveryActions=New-Flow;$recoveryActions.Dock='Top';$recoveryActions.Height=48
 $script:recoverControl=New-Button 'Recuperar control';$script:recoverControl.Add_Click({Invoke-UiAction {Start-ControlRecovery $false}});$recoveryActions.Controls.Add($script:recoverControl)
 $script:forceRecovery=New-Button 'Forzar cierre y recuperar';$script:forceRecovery.Enabled=$false;$script:forceRecovery.Add_Click({Invoke-UiAction {Start-ControlRecovery $true}});$recoveryActions.Controls.Add($script:forceRecovery)
 $script:recoveryResult=New-Object Windows.Forms.TextBox;$script:recoveryResult.Multiline=$true;$script:recoveryResult.ReadOnly=$true;$script:recoveryResult.ScrollBars='Vertical';$script:recoveryResult.Dock='Fill';$script:recoveryResult.BackColor=[Drawing.Color]::White
-$script:recoveryResult.Text='Detecta nuestros motores locales para la misma IP y puerto. No detecta clientes de otros computadores. No reanuda secuencias. La parada ordenada puede intentar negro y brillo cero.'
+$script:recoveryResult.Text='Detecta nuestros motores para esta conexión Ethernet o la sesión USB local. No detecta clientes de otros computadores. No reanuda secuencias. La parada ordenada puede intentar negro y brillo cero.'
 $recoveryGroup.Controls.Add($script:recoveryResult);$recoveryGroup.Controls.Add($recoveryActions)
 Add-StackRow $manualStack $recoveryGroup 4 180
 $manualDetail=New-Label 'Secado manual: ejecuta una vez el perfil de Secado diario de Secuencias (188 min inicialmente). No modifica reservas ni horarios, no exige declarar alimentación conjunta y no se reinicia tras una desconexión. Mantenga la pantalla bajo supervisión durante la prueba.' 10;$manualDetail.AutoSize=$false
@@ -956,8 +956,6 @@ function Invoke-GuiSmoke {
         if($script:powerVerified.Checked -or $script:startupVerified.Checked){throw 'Smoke: second USB target retained confirmations.'}
         $script:usbDevice.SelectedIndex=0
         $script:model.SelectedItem=$saved.deviceModel;$script:transport.SelectedItem=$saved.connectionType;Save-Configuration
-        $script:probeConnection.PerformClick()
-        if($script:notice.Text -ne 'Prueba de conexion deshabilitada en SmokeTest.'){throw 'Smoke: connection test handler missing.'}
         $oldMinutes=$script:phaseGrid.Rows[0].Cells['minutes'].Value
         $script:phaseGrid.Rows[0].Cells['minutes'].Value='24.5';$script:poll.Value=1.5
         $windowIndex=$script:windowGrid.Rows.Add('08:00','18:00',$false,$true,$false,$false,$false,$false,$false)
@@ -1007,6 +1005,8 @@ function Invoke-GuiSmoke {
         if($script:tabs.TabPages.Count -ne 6 -or $count -lt 65){throw 'Smoke: expected tabs and controls missing.'}
         $script:form.Show();[Windows.Forms.Application]::DoEvents()
         if(-not $script:operatorBanner.Visible){throw 'Smoke: reachable operator question not displayed.'}
+        $script:probeConnection.PerformClick()
+        if($script:notice.Text -ne 'Prueba de conexion deshabilitada en SmokeTest.'){throw 'Smoke: connection test handler missing.'}
         $script:tabs.SelectedTab=$manualPage
         $applyManual.PerformClick()
         if($script:notice.Text -ne 'Mandos deshabilitados en SmokeTest.'){throw ('Smoke: Apply handler failed: '+$script:notice.Text)}

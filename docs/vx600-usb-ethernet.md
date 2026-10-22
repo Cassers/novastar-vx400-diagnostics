@@ -47,7 +47,6 @@ El tiempo límite se comparte entre transferencias bulk. Las funciones nativas d
 - [x] Selector gráfico, búsqueda y prueba de lectura.
 - [x] Instalación con todos los módulos y exclusión/recuperación USB.
 - [x] Pruebas locales contra simulador e IO inyectada, incluidas respuestas inválidas y sustitución de dispositivo.
-- [ ] Verificación nativa Windows PowerShell 5.1 y capturas del commit final.
 - [ ] Aceptación en el VX600 físico por cada transporte.
 
-La simulación comprueba software y formato; no acredita un intercambio físico USB ni deshumidificación. Para revertir, utilice el paquete v0.5.0 con una configuración VX400/Ethernet compatible; retire las tres propiedades de conexión nuevas si vuelve al validador anterior. Conserve datos y decisiones pendientes.
+La CI de cada commit comprueba Windows PowerShell 5.1 y genera capturas de la interfaz; consulte la ejecución vinculada en la release. La simulación comprueba software y formato; no acredita un intercambio físico USB ni deshumidificación. Para revertir, utilice el paquete v0.5.0 con una configuración VX400/Ethernet compatible; retire las tres propiedades de conexión nuevas si vuelve al validador anterior. Conserve datos y decisiones pendientes.

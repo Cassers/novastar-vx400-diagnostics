@@ -4,7 +4,7 @@ cd /d "%~dp0"
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -STA -ExecutionPolicy RemoteSigned -File "%~dp0Control-Vx400.ps1" %*
 if errorlevel 1 (
   echo.
-  echo No se pudo abrir el control VX400. Revise el mensaje anterior.
+  echo No se pudo abrir el control NovaStar. Revise el mensaje anterior.
   echo Para guardar una instalacion o cambiar el inicio automatico, use Ejecutar como administrador.
   pause
 )

@@ -15,6 +15,11 @@ jobs:
         run: |
           .\tests\Connection.Tests.ps1
           .\tests\Usb.Tests.ps1
+      - name: VX600 manual layer protocol and simulator
+        shell: powershell
+        run: |
+          .\tests\Layer.Tests.ps1
+          python .\tests\layer_runtime_tests.py
       - name: GUI elevation mutex handoff
         shell: powershell
         run: .\tests\GuiHandoff.Tests.ps1

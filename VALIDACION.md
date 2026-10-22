@@ -42,3 +42,7 @@
 - Windows PowerShell 5.1: CI incluida en `.github/workflows/test.yml`; consultar el resultado del commit publicado para la evidencia de ejecución en Windows. El control UI Automation con NovaLCT real y la ejecución del BAT por doble clic requieren el PC del sitio.
 
 Retirada del diagnóstico puntual: eliminar esta carpeta y sus informes. Ejecutar únicamente `Diagnosticar-VX400.bat` no instala tareas ni configuración de arranque. La instalación permanente opcional se retira con `Quitar-Monitor-VX400.bat`, conservando archivos. Las pruebas de lectura no modifican el dispositivo. Si se ejecutaron pruebas activas del diagnóstico, confirmar brillo/modo originales en el equipo y revisar `restoration` antes de retirarlo.
+
+## v0.7.0: capas manuales y relevo de recuperación
+
+Ejecute `tests/Layer.Tests.ps1`, `python tests/layer_runtime_tests.py`, `tests/GuiHandoff.Tests.ps1` y el smoke de GUI en Windows PowerShell 5.1, además de la regresión existente. El instalador debe copiar Invoke-VxLayer.ps1 y Vx.Layers.psm1. El smoke usa respuestas ficticias y no prueba el USB físico. Prueba en sitio pendiente: lectura completa de capas, cada ON/OFF, composición y conservación de geometría por USB/Ethernet. Ver [capas-manuales.md](docs/capas-manuales.md).

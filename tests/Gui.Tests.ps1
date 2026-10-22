@@ -25,6 +25,7 @@ try{
     [IO.File]::WriteAllText((Join-Path $fixture 'Install-Vx400Control.ps1'),$stub,(New-Object Text.UTF8Encoding($true)))
     [IO.File]::WriteAllText((Join-Path $fixture 'Set-Vx400Manual.ps1'),$stub,(New-Object Text.UTF8Encoding($true)))
     [IO.File]::WriteAllText((Join-Path $fixture 'Recover-Vx400.ps1'),$stub,(New-Object Text.UTF8Encoding($true)))
+    [IO.File]::WriteAllText((Join-Path $fixture 'Invoke-VxLayer.ps1'),$stub,(New-Object Text.UTF8Encoding($true)))
     $config=Join-Path $fixture 'plan.config.json'
     $data=Join-Path $fixture 'never-write-real-data'
     $before=(Get-FileHash -LiteralPath $config -Algorithm SHA256).Hash

@@ -136,4 +136,4 @@ function ConvertFrom-VxInputPayload {
         }
     }
 }
-Export-ModuleMember -Function New-VxReadRequest,New-VxBrightnessRequest,New-VxDisplayRequest,ConvertFrom-VxResponse,Invoke-VxExchange,ConvertFrom-VxInputPayload
+Export-ModuleMember -Function New-VxFrame,New-VxReadRequest,New-VxBrightnessRequest,New-VxDisplayRequest,ConvertFrom-VxResponse,Invoke-VxExchange,ConvertFrom-VxInputPayload

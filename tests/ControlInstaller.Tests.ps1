@@ -26,6 +26,7 @@ try {
     if (-not $migrated.operatorPending -or $migrated.operatorGateId -ne 'test-pending') { throw 'Portable pending operator decision was lost.' }
     & $exe -NoProfile -File $installer -ConfigPath $configFile -Update -SourceDataDirectory $portableData
     if ($LASTEXITCODE -eq 0) { throw 'Cross-data update must not discard a portable operator decision.' }
+    foreach($layerFile in @('Invoke-VxLayer.ps1','Vx.Layers.psm1')){if(-not (Test-Path -LiteralPath (Join-Path $installRoot $layerFile))){throw ('Missing installed layer control: '+$layerFile)}}
     $task=Get-ScheduledTask -TaskName $name -TaskPath '\'
     if ($task.Actions[0].Arguments -match 'EnableControl') { throw 'Default installation must be monitor.' }
     if ($task.Principal.UserId -notin @('SYSTEM','S-1-5-18') -or $task.Settings.MultipleInstances -ne 'IgnoreNew') { throw 'Invalid task identity/settings.' }

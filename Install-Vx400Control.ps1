@@ -106,7 +106,7 @@ try {
         Assert-OwnedControlDirectory $installRoot $dataRoot
     }
     $sourceConfig=[IO.Path]::GetFullPath($ConfigPath)
-    $names=@('Watch-Vx400Plan.ps1','Vx400.Schedule.psm1','Vx400.Protocol.psm1','Vx.Connection.psm1','Vx.Usb.psm1','Vx.Usb.Native.cs','Test-VxConnection.ps1','Abrir-Control-NovaStar.bat','Control-Vx400.ps1','Set-Vx400Manual.ps1','Recover-Vx400.ps1','Vx400.Ownership.psm1','Abrir-Control-VX400.bat','Install-Vx400Control.ps1')
+    $names=@('Watch-Vx400Plan.ps1','Vx400.Schedule.psm1','Vx400.Protocol.psm1','Vx.Connection.psm1','Vx.Usb.psm1','Vx.Usb.Native.cs','Test-VxConnection.ps1','Abrir-Control-NovaStar.bat','Control-Vx400.ps1','Set-Vx400Manual.ps1','Invoke-VxLayer.ps1','Vx.Layers.psm1','Recover-Vx400.ps1','Vx400.Ownership.psm1','Abrir-Control-VX400.bat','Install-Vx400Control.ps1')
     foreach ($name in $names) {
         $path=Join-Path $PSScriptRoot $name
         Assert-RealPath $path

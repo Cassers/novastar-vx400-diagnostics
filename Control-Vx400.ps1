@@ -59,6 +59,8 @@ $script:logOffset=0L; $script:logFragment=''; $script:logLines=New-Object 'Colle
 $script:logIdentity=''; $script:loading=$false; $script:profileKey='dry'; $script:gateId=''
 $script:connectionProcess=$null;$script:connectionOutput='';$script:connectionError='';$script:connectionList=$false
 $script:verificationTarget='';$script:refreshingUsb=$false
+$script:layerProcess=$null;$script:layerOutput='';$script:layerError='';$script:layerChanges='';$script:layerTarget='';$script:layerSnapshot=$null
+$script:layerRows=@{};$script:layerButtons=@()
 $script:profiles=@{}
 foreach ($key in @('dry','preheat','cooldown')) { $script:profiles[$key]=@($script:config.profiles.$key) }
 $script:blue=[Drawing.Color]::FromArgb(24,82,166)
@@ -271,6 +273,7 @@ function Test-Running {
     return ($script:stateRecent -and [string](Get-Property $script:state state) -ne 'STOPPED')
 }
 function Save-Configuration {
+    if($null -ne $script:layerProcess){throw 'Espere a que termine la consulta o mando de capas.'}
     if($null -ne $script:recoveryProcess -or $null -ne $script:connectionProcess){throw 'Espere a que termine la recuperacion o prueba de conexion.'}
     if(-not $script:smoke -and (Test-Running)){throw 'Pulse Detener y espere la confirmación antes de guardar cambios. La configuración anterior sigue activa.'}
     Assert-WritableContext
@@ -323,6 +326,7 @@ function Use-InstalledContext {
     Update-Requests;Update-Status;Update-Log
 }
 function Begin-Installer([string]$Action,[bool]$Control=$false) {
+    if($null -ne $script:layerProcess){throw 'Espere a que termine la consulta o mando de capas.'}
     if($null -ne $script:recoveryProcess -or $null -ne $script:connectionProcess){throw 'Espere a que termine la recuperacion o prueba de conexion.'}
     if($script:smoke){throw 'Instalación deshabilitada en SmokeTest.'}
     if($null -ne $script:installerProcess){throw 'Espere a que termine la operación de inicio automático.'}
@@ -347,6 +351,7 @@ function Begin-Installer([string]$Action,[bool]$Control=$false) {
     Set-Notice 'Actualizando inicio automático…'
 }
 function Start-Controller([bool]$Control,[switch]$ManualDry) {
+    if($null -ne $script:layerProcess){throw 'Espere a que termine la consulta o mando de capas.'}
     if($null -ne $script:recoveryProcess -or $null -ne $script:connectionProcess){throw 'Espere a que termine la recuperacion o prueba de conexion.'}
     if($script:smoke){throw 'Controlador deshabilitado en SmokeTest.'}
     $script:task=Get-ControlTask
@@ -373,6 +378,7 @@ function Start-Controller([bool]$Control,[switch]$ManualDry) {
     Set-Notice $(if($ManualDry){'Secado manual solicitado. Una sola ejecucion; ante una perdida de comunicacion se detiene.'}else{'Inicio solicitado. Esperando los datos del controlador…'})
 }
 function Start-PanelCommand([ValidateSet('Normal','Blackout','White')][string]$Display) {
+    if($null -ne $script:layerProcess){throw 'Espere a que termine la consulta o mando de capas.'}
     if($null -ne $script:recoveryProcess -or $null -ne $script:connectionProcess){throw 'Espere a que termine la recuperacion o prueba de conexion.'}
     $script:panelDisplay.SelectedIndex=switch($Display){'Blackout'{0};'Normal'{1};'White'{2}}
     if($script:smoke){throw 'Mandos deshabilitados en SmokeTest.'}
@@ -402,6 +408,7 @@ function Start-PanelCommand([ValidateSet('Normal','Blackout','White')][string]$D
     $script:panelResult.Text='Enviando mando; esperando confirmacion del VX400...'
 }
 function Start-ControlRecovery([bool]$Force=$false) {
+    if($null -ne $script:layerProcess){throw 'Espere a que termine la consulta o mando de capas.'}
     if($script:smoke){throw 'Recuperacion deshabilitada en SmokeTest.'}
     if($null -ne $script:connectionProcess -or $null -ne $script:recoveryProcess -or $null -ne $script:panelProcess -or $null -ne $script:panelPending -or $null -ne $script:installerProcess){throw 'Espere a que termine la operacion actual.'}
     if($Force -and (-not $script:recoveryNeedsForce -or -not [IO.File]::Exists($script:recoverySnapshot))){throw 'Primero pulse Recuperar control y revise los procesos detectados.'}
@@ -462,6 +469,7 @@ function Update-ControlRecovery {
     Update-Log
 }
 function Request-Stop {
+    if($null -ne $script:layerProcess){throw 'Espere a que termine la consulta o mando de capas.'}
     if($script:smoke){throw 'Detención deshabilitada en SmokeTest.'}
     $script:task=Get-ControlTask
     if($null -ne $script:task){
@@ -475,6 +483,7 @@ function Request-Stop {
     Set-Notice 'Detención ordenada solicitada. Espere hasta 10 segundos; no se forzará el proceso.'
 }
 function Send-OperatorAnswer([ValidateSet('restart','hold')][string]$Action) {
+    if($null -ne $script:layerProcess){throw 'Espere a que termine la consulta o mando de capas.'}
     if($null -ne $script:recoveryProcess){throw 'Espere a que termine la recuperacion antes de responder al controlador.'}
     if($script:smoke){throw 'Respuestas deshabilitadas en SmokeTest.'}
     $state=Read-VxSharedText -Path (Join-Path $script:dataDirectory 'estado.json')|ConvertFrom-Json
@@ -635,7 +644,7 @@ function Invoke-Tick {
             }
         }
         $thermal=$script:stateRecent -and (Get-Property $script:state mode) -eq 'control' -and (Get-Property $script:state state) -in @('DRY','PREHEAT','COOLDOWN')
-        $script:panelFields.Enabled=(-not $thermal -and $null -eq $script:panelProcess -and $null -eq $script:panelPending -and $null -eq $script:recoveryProcess -and $null -eq $script:connectionProcess)
+        $script:panelFields.Enabled=($null -eq $script:layerProcess -and -not $thermal -and $null -eq $script:panelProcess -and $null -eq $script:panelPending -and $null -eq $script:recoveryProcess -and $null -eq $script:connectionProcess)
         if($null -ne $script:panelProcess -and $script:panelProcess.HasExited){
             $code=Get-GuiChildExitCode $script:panelProcess
             $detail=if([IO.File]::Exists($script:panelError)){[IO.File]::ReadAllText($script:panelError)}else{''}
@@ -660,11 +669,13 @@ function Invoke-Tick {
                 Set-Notice 'Mando manual confirmado por el controlador.'
             }
         }
+        Update-LayerResult
+        Update-LayerControls
         Update-ConnectionProbe
         Update-ControlRecovery
-        $script:recoverControl.Enabled=($null -eq $script:recoveryProcess -and $null -eq $script:panelProcess -and $null -eq $script:panelPending -and $null -eq $script:installerProcess -and $null -eq $script:connectionProcess)
+        $script:recoverControl.Enabled=($null -eq $script:layerProcess -and $null -eq $script:recoveryProcess -and $null -eq $script:panelProcess -and $null -eq $script:panelPending -and $null -eq $script:installerProcess -and $null -eq $script:connectionProcess)
         $script:forceRecovery.Enabled=($script:recoverControl.Enabled -and $script:recoveryNeedsForce)
-        $script:operatorBanner.Enabled=($null -eq $script:recoveryProcess -and $null -eq $script:connectionProcess)
+        $script:operatorBanner.Enabled=($null -eq $script:layerProcess -and $null -eq $script:recoveryProcess -and $null -eq $script:connectionProcess)
         if($null -ne $script:stopDeadline){
             if(-not (Test-Running)){$script:stopDeadline=$null;Set-Notice 'Controlador detenido. Ya puede guardar la configuración.'}
             elseif([DateTimeOffset]::UtcNow -gt $script:stopDeadline){$script:stopDeadline=$null;Set-Notice 'No se confirmó la detención en 10 segundos. Revise Registro antes de guardar; no se forzó el proceso.' $true}
@@ -673,8 +684,78 @@ function Invoke-Tick {
     finally{$script:tickBusy=$false}
 }
 
+
+function Reset-LayerSnapshot {
+    $script:layerSnapshot=$null;$script:layerTarget=''
+    foreach($row in $script:layerRows.Values){$row.Text='Sin consultar'}
+    foreach($button in $script:layerButtons){$button.Enabled=$false}
+}
+function Update-LayerControls {
+    $busy=($null -ne $script:layerProcess -or $null -ne $script:panelProcess -or $null -ne $script:panelPending -or $null -ne $script:connectionProcess -or $null -ne $script:recoveryProcess -or $null -ne $script:installerProcess -or $null -ne $script:stopDeadline)
+    $idle=(-not (Test-Running) -and ($null -eq $script:manualProcess -or $script:manualProcess.HasExited))
+    $supported=([string]$script:model.SelectedItem -eq 'VX600')
+    $script:readLayers.Enabled=($supported -and -not $busy -and $idle)
+    foreach($button in $script:layerButtons){$button.Enabled=($script:readLayers.Enabled -and $null -ne $script:layerSnapshot -and $script:layerTarget -ceq $script:verificationTarget)}
+}
+function Start-LayerCommand([string]$Layer='', [bool]$Enabled=$false) {
+    if($script:smoke){throw 'Mandos de capas deshabilitados en SmokeTest.'}
+    if([string]$script:model.SelectedItem -ne 'VX600'){throw 'Las capas MAIN/PIP1/PIP2 requieren VX600 original.'}
+    if($null -ne $script:layerProcess -or $null -ne $script:panelProcess -or $null -ne $script:panelPending -or $null -ne $script:connectionProcess -or $null -ne $script:recoveryProcess -or $null -ne $script:installerProcess -or $null -ne $script:stopDeadline){throw 'Espere a que termine la operacion actual.'}
+    if((Test-Running) -or ($null -ne $script:manualProcess -and -not $script:manualProcess.HasExited)){throw 'Pulse Detener y espere antes de consultar o cambiar capas. Una secuencia conserva el control.'}
+    $task=Get-ControlTask
+    if($null -ne $task -and [string]$task.State -ne 'Disabled'){throw 'Pulse Detener para pausar el inicio automatico antes de cambiar capas.'}
+    if($Layer -and ($null -eq $script:layerSnapshot -or $script:layerTarget -cne $script:verificationTarget)){throw 'Primero pulse Leer capas para este equipo.'}
+    if([string]$script:transport.SelectedItem -eq 'USB' -and [string]::IsNullOrWhiteSpace([string]$script:usbDevice.SelectedItem.Key)){throw 'Busque y seleccione el dispositivo USB antes de consultar capas.'}
+    Save-Configuration
+    $worker=Join-Path $PSScriptRoot 'Invoke-VxLayer.ps1'
+    if(-not [IO.File]::Exists($worker)){throw 'Falta Invoke-VxLayer.ps1. Extraiga el paquete completo.'}
+    $arguments='-NoProfile -ExecutionPolicy RemoteSigned -File '+(Quote-Argument $worker)+' -ConfigPath '+(Quote-Argument $script:configPath)+' -DataDirectory '+(Quote-Argument $script:dataDirectory)
+    $script:layerOutput=Join-Path ([IO.Path]::GetTempPath()) ('novastar-layers-'+[guid]::NewGuid().ToString('N')+'.out')
+    $script:layerError=$script:layerOutput+'.err';$script:layerChanges=$script:layerOutput+'.json'
+    if($Layer){
+        if($Layer -notin @('Main','PIP1','PIP2')){throw 'Capa no valida.'}
+        [IO.File]::WriteAllText($script:layerChanges,(@{enabled=$Enabled}|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)))
+        $arguments+=' -Action Apply -Layer '+$Layer+' -ChangesPath '+(Quote-Argument $script:layerChanges)+' -EnableControl'
+    }else{$arguments+=' -Action Read'}
+    $script:layerTarget=$script:verificationTarget
+    try{$script:layerProcess=Start-GuiChildProcess -Arguments $arguments -ErrorPath $script:layerError -OutputPath $script:layerOutput}
+    catch{foreach($path in @($script:layerOutput,$script:layerError,$script:layerChanges)){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}};Reset-LayerSnapshot;throw}
+    $script:layerResult.Text=$(if($Layer){'Aplicando '+$Layer+'; esperando confirmacion y lectura posterior...'}else{'Consultando el estado de MAIN, PIP1 y PIP2. Sin cambiar capas ni brillo...'})
+    Update-LayerControls
+}
+function Update-LayerResult {
+    if($null -eq $script:layerProcess -or -not $script:layerProcess.HasExited){return}
+    $code=Get-GuiChildExitCode $script:layerProcess
+    $output=if([IO.File]::Exists($script:layerOutput)){[IO.File]::ReadAllText($script:layerOutput)}else{''}
+    $detail=if([IO.File]::Exists($script:layerError)){[IO.File]::ReadAllText($script:layerError)}else{''}
+    $script:layerProcess.Dispose();$script:layerProcess=$null
+    foreach($path in @($script:layerOutput,$script:layerError,$script:layerChanges)){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}}
+    $result=$null;try{$result=$output|ConvertFrom-Json}catch{}
+    $valid=($code -eq 0 -and $null -ne $result -and (Get-Property $result success $false) -eq $true -and (Get-Property $result deviceModel '') -eq 'VX600' -and $script:layerTarget -ceq $script:verificationTarget)
+    if($valid){
+        $layers=@(Get-Property $result layers @())
+        if($layers.Count -ne 3){$valid=$false}
+        foreach($name in @('Main','PIP1','PIP2')){
+            $matches=@($layers|Where-Object{(Get-Property $_ layer '') -ceq $name})
+            if($matches.Count -ne 1 -or (Get-Property $matches[0] enabled $null) -isnot [bool]){$valid=$false;break}
+        }
+    }
+    if(-not $valid){
+        if($null -ne $result){$detail=[string](Get-Property $result error $detail)}
+        if([string]::IsNullOrWhiteSpace($detail)){$detail='Respuesta incompleta o cambio de equipo. Pulse Leer capas para consultar otra vez.'}
+        Reset-LayerSnapshot
+        $script:layerResult.Text='Capas sin confirmar. '+$detail.Trim()
+        Set-Notice 'No se confirmaron las capas. Revise el detalle y consulte otra vez.' $true
+        return
+    }
+    $script:layerSnapshot=$result
+    foreach($layer in $result.layers){$script:layerRows[[string]$layer.layer].Text=$(if($layer.enabled){'Activada'}else{'Desactivada'})}
+    $script:layerResult.Text='Estado confirmado por protocolo. Cada mando cambia solo la activacion de la capa elegida; conserva entrada, posicion y tamano. No cambia el brillo ni desbloquea el mando fisico.'
+    Set-Notice 'Estado de capas confirmado por el VX600.'
+}
+
 function Update-ConnectionLabels {
-    $script:form.Text='NovaStar '+$script:config.deviceModel+' · Control local v0.6.0'
+    $script:form.Text='NovaStar '+$script:config.deviceModel+' · Control local v0.7.0'
     $script:headerTitle.Text=$script:config.deviceModel+'  /  Control local'
     $destination=if($script:config.connectionType -eq 'USB'){'USB · '+$(if($script:config.usbDeviceKey){$script:config.usbDeviceKey}else{'selección automática'})}else{'Ethernet · '+$script:config.deviceAddress+':'+$script:config.tcpPort}
     $script:endpoint.Text=$destination+'  ·  '+$script:config.timeZone
@@ -684,6 +765,7 @@ function Update-TargetVerification {
     $target=if([string]$script:transport.SelectedItem -eq 'USB'){[string]$script:usbDevice.SelectedItem.Key}else{$script:address.Text.Trim()+':'+$script:port.Value}
     $identity=([string]$script:model.SelectedItem)+'|'+([string]$script:transport.SelectedItem)+'|'+$target
     if($script:verificationTarget -and $identity -cne $script:verificationTarget){$script:powerVerified.Checked=$false;$script:startupVerified.Checked=$false}
+    if($identity -cne $script:verificationTarget){Reset-LayerSnapshot}
     $script:verificationTarget=$identity
 }
 function Update-ConnectionFields {
@@ -692,6 +774,7 @@ function Update-ConnectionFields {
     $script:usbDevice.Enabled=$usb;$script:scanUsb.Enabled=$usb
 }
 function Start-ConnectionProbe([switch]$ListUsb) {
+    if($null -ne $script:layerProcess){throw 'Espere a que termine la consulta o mando de capas.'}
     if($script:smoke){throw 'Prueba de conexion deshabilitada en SmokeTest.'}
     if((Test-Running) -or $null -ne $script:connectionProcess -or $null -ne $script:panelProcess -or $null -ne $script:panelPending -or $null -ne $script:installerProcess -or $null -ne $script:recoveryProcess){throw 'Detenga el monitor o secado y espere antes de probar otra conexion.'}
     $task=Get-ControlTask
@@ -734,7 +817,7 @@ function Update-ConnectionProbe {
 
 
 $script:form=New-Object Windows.Forms.Form
-$script:form.Text='NovaStar '+$script:config.deviceModel+' · Control local v0.6.0'
+$script:form.Text='NovaStar '+$script:config.deviceModel+' · Control local v0.7.0'
 $script:form.ClientSize=New-Object Drawing.Size(1200,860)
 $script:form.MinimumSize=New-Object Drawing.Size(1050,700)
 $script:form.StartPosition='CenterScreen';$script:form.BackColor=$script:background
@@ -892,10 +975,10 @@ Add-TextColumn $script:requestGrid title 'Solicitud' 180;Add-TextColumn $script:
 Add-StackRow $requestStack $script:requestGrid 4
 $requestNote=New-Label 'Las reservas no pueden solaparse. Cancelar conserva el historial. Los horarios semanales se editan en Horarios y no se duplican aquí.' 10;$requestNote.AutoSize=$false;Add-StackRow $requestStack $requestNote 5 50
 
-$manualPage=New-Page 'Control manual';$manualPage.AutoScroll=$true;$manualStack=New-Stack $manualPage 6
-$manualStack.Dock='Top';$manualStack.Height=690
+$manualPage=New-Page 'Control manual';$manualPage.AutoScroll=$true;$manualStack=New-Stack $manualPage 7
+$manualStack.Dock='Top';$manualStack.Height=990
 Add-StackRow $manualStack (New-Label 'Mandos directos de la pantalla' 17 $true) 0 45
-$manualHelp=New-Label 'Fuera de una secuencia, un mando pausa el motor y su inicio automatico. Durante secado o preparacion, el brillo queda bloqueado. Los cambios se aplican al VX400 y mantienen la salida elegida hasta el siguiente mando. El modo manual no ejecuta horarios.' 10;$manualHelp.AutoSize=$false
+$manualHelp=New-Label 'Fuera de una secuencia, un mando pausa el motor y su inicio automatico. Durante secado o preparacion, el brillo queda bloqueado. Los cambios se aplican al controlador y mantienen la salida elegida hasta el siguiente mando. El modo manual no ejecuta horarios.' 10;$manualHelp.AutoSize=$false
 Add-StackRow $manualStack $manualHelp 1 65
 $manualFields=New-Flow;$script:panelFields=$manualFields
 $manualFields.Controls.Add((New-Label 'Brillo solicitado (%)' 11 $true))
@@ -913,7 +996,33 @@ $manualFields.SetFlowBreak($button,$true)
 $runDry=New-Button 'Iniciar secado manual' $true;$runDry.Add_Click({Invoke-UiAction {Start-Controller $true -ManualDry}});$manualFields.Controls.Add($runDry)
 Add-StackRow $manualStack $manualFields 2 155
 $script:panelResult=New-Object Windows.Forms.TextBox;$script:panelResult.Multiline=$true;$script:panelResult.ReadOnly=$true;$script:panelResult.ScrollBars='Vertical';$script:panelResult.BackColor=[Drawing.Color]::White;$script:panelResult.Text='Sin mandos enviados. El porcentaje mostrado es una consigna, no una medicion del panel.'
-Add-StackRow $manualStack $script:panelResult 3 100
+Add-StackRow $manualStack $script:panelResult 3 80
+
+$layerGroup=New-Object Windows.Forms.GroupBox;$layerGroup.Text='MAIN / PIP1 / PIP2 - VX600';$layerGroup.Padding=New-Object Windows.Forms.Padding(10,22,10,8)
+$layerStack=New-Stack $layerGroup 3
+$layerBar=New-Flow
+$script:readLayers=New-Button 'Leer capas';$script:readLayers.Add_Click({Invoke-UiAction {Start-LayerCommand}});$layerBar.Controls.Add($script:readLayers)
+$layerBar.Controls.Add((New-Label 'Con el motor detenido. Solo activa o desactiva las capas configuradas.' 10))
+Add-StackRow $layerStack $layerBar 0 45
+$layerTable=New-Object Windows.Forms.TableLayoutPanel;$layerTable.ColumnCount=4;$layerTable.RowCount=3
+foreach($name in @('Main','PIP1','PIP2')){
+    $row=$layerTable.Controls.Count/4
+    $label=New-Label $(if($name -eq 'Main'){'MAIN'}else{$name}) 11 $true
+    $layerTable.Controls.Add($label,0,$row)
+    $status=New-Label 'Sin consultar' 10;$status.MinimumSize=New-Object Drawing.Size(130,20);$script:layerRows[$name]=$status;$layerTable.Controls.Add($status,1,$row)
+    foreach($enabled in @($true,$false)){
+        $layerButton=New-Button $(if($enabled){'Activar'}else{'Desactivar'})
+        $layerButton.Tag=[pscustomobject]@{Layer=$name;Enabled=$enabled};$layerButton.Enabled=$false
+        $layerButton.Add_Click({param($sender,$eventArgs) Invoke-UiAction {Start-LayerCommand -Layer ([string]$sender.Tag.Layer) -Enabled ([bool]$sender.Tag.Enabled)}})
+        $script:layerButtons+=,$layerButton;$layerTable.Controls.Add($layerButton,$(if($enabled){2}else{3}),$row)
+    }
+}
+Add-StackRow $layerStack $layerTable 1 140
+$script:layerResult=New-Object Windows.Forms.TextBox;$script:layerResult.Multiline=$true;$script:layerResult.ReadOnly=$true;$script:layerResult.ScrollBars='Vertical';$script:layerResult.BackColor=[Drawing.Color]::White
+$script:layerResult.Text='Pulse Leer capas. Estado desconocido hasta recibir respuesta. Durante secado, preparacion o enfriamiento estos mandos permanecen bloqueados.'
+Add-StackRow $layerStack $script:layerResult 2
+Add-StackRow $manualStack $layerGroup 4 275
+
 $recoveryGroup=New-Object Windows.Forms.GroupBox;$recoveryGroup.Text='Recuperar control de otras copias en este PC';$recoveryGroup.Padding=New-Object Windows.Forms.Padding(10,20,10,8)
 $recoveryActions=New-Flow;$recoveryActions.Dock='Top';$recoveryActions.Height=48
 $script:recoverControl=New-Button 'Recuperar control';$script:recoverControl.Add_Click({Invoke-UiAction {Start-ControlRecovery $false}});$recoveryActions.Controls.Add($script:recoverControl)
@@ -921,9 +1030,9 @@ $script:forceRecovery=New-Button 'Forzar cierre y recuperar';$script:forceRecove
 $script:recoveryResult=New-Object Windows.Forms.TextBox;$script:recoveryResult.Multiline=$true;$script:recoveryResult.ReadOnly=$true;$script:recoveryResult.ScrollBars='Vertical';$script:recoveryResult.Dock='Fill';$script:recoveryResult.BackColor=[Drawing.Color]::White
 $script:recoveryResult.Text='Detecta nuestros motores para esta conexión Ethernet o la sesión USB local. No detecta clientes de otros computadores. No reanuda secuencias. La parada ordenada puede intentar negro y brillo cero.'
 $recoveryGroup.Controls.Add($script:recoveryResult);$recoveryGroup.Controls.Add($recoveryActions)
-Add-StackRow $manualStack $recoveryGroup 4 180
+Add-StackRow $manualStack $recoveryGroup 5 180
 $manualDetail=New-Label 'Secado manual: ejecuta una vez el perfil de Secado diario de Secuencias (188 min inicialmente). No modifica reservas ni horarios, no exige declarar alimentación conjunta y no se reinicia tras una desconexión. Mantenga la pantalla bajo supervisión durante la prueba.' 10;$manualDetail.AutoSize=$false
-Add-StackRow $manualStack $manualDetail 5
+Add-StackRow $manualStack $manualDetail 6
 
 $logPage=New-Page 'Registro';$logStack=New-Stack $logPage 3
 $logIntro=New-Label 'Actividad reciente del controlador' 17 $true;Add-StackRow $logStack $logIntro 0 45
@@ -1082,6 +1191,38 @@ function Invoke-GuiSmoke {
         $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
         while($null -ne $script:recoveryProcess){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: recovery success did not finish.'};Invoke-Tick;Start-Sleep -Milliseconds 25}
         if($script:forceRecovery.Enabled -or $script:recoveryResult.Text -notmatch 'no queda confirmada' -or $script:recoverySnapshot){throw 'Smoke: successful recovery retained force or claimed display output.'}
+
+        $state.state='STOPPED';[IO.File]::WriteAllText($statePath,($state|ConvertTo-Json));Invoke-Tick
+        $script:model.SelectedItem='VX600';Update-LayerControls
+        $script:tabs.SelectedIndex=4;[Windows.Forms.Application]::DoEvents()
+        $script:readLayers.PerformClick()
+        if($script:notice.Text -ne 'Mandos de capas deshabilitados en SmokeTest.'){throw 'Smoke: layer read handler missing.'}
+        $layerFixture=@{success=$true;deviceModel='VX600';connectionType='Ethernet';layers=@(@{layer='Main';enabled=$true},@{layer='PIP1';enabled=$false},@{layer='PIP2';enabled=$false})}|ConvertTo-Json -Depth 5 -Compress
+        [IO.File]::WriteAllText($fixtureScript,("Write-Output '"+$layerFixture+"'; exit 0"))
+        $script:layerOutput=Join-Path $temporary 'layers.out';$script:layerError=Join-Path $temporary 'layers.err';$script:layerChanges=Join-Path $temporary 'layers.json';$script:layerTarget=$script:verificationTarget
+        $script:layerProcess=Start-GuiChildProcess -Arguments $fixtureArgs -ErrorPath $script:layerError -OutputPath $script:layerOutput
+        $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
+        while($null -ne $script:layerProcess){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: layer read did not finish.'};Invoke-Tick;Start-Sleep -Milliseconds 25}
+        Update-LayerControls
+        if($script:layerRows.Main.Text -ne 'Activada' -or $script:layerRows.PIP1.Text -ne 'Desactivada' -or $null -eq $script:layerSnapshot){throw 'Smoke: layer states not shown.'}
+        $script:layerButtons[2].PerformClick()
+        if($script:notice.Text -ne 'Mandos de capas deshabilitados en SmokeTest.'){throw 'Smoke: PIP1 activate handler missing.'}
+        $script:state=[pscustomobject]@{updatedUtc=[DateTimeOffset]::UtcNow.ToString('o');mode='control';state='DRY';processId=$PID}
+        $script:stateRecent=$true
+        Update-LayerControls
+        if($script:readLayers.Enabled -or @($script:layerButtons|Where-Object{$_.Enabled}).Count){throw 'Smoke: layer controls enabled during active dry.'}
+        $script:state=$null;$script:stateRecent=$false
+        # A valid result for the old destination must not authorize the new destination.
+        $script:layerOutput=Join-Path $temporary 'layers.out';$script:layerError=Join-Path $temporary 'layers.err'
+        $script:layerTarget='old-target'
+        $script:layerProcess=Start-GuiChildProcess -Arguments $fixtureArgs -ErrorPath $script:layerError -OutputPath $script:layerOutput
+        $deadline=[DateTimeOffset]::UtcNow.AddSeconds(10)
+        while($null -ne $script:layerProcess){if([DateTimeOffset]::UtcNow -gt $deadline){throw 'Smoke: stale layer result did not finish.'};Invoke-Tick;Start-Sleep -Milliseconds 25}
+        if($null -ne $script:layerSnapshot -or $script:layerRows.Main.Text -ne 'Sin consultar'){throw 'Smoke: stale target retained layer authorization.'}
+        $script:model.SelectedItem='VX400';Update-LayerControls
+        if($script:readLayers.Enabled){throw 'Smoke: VX400 enabled VX600 layers.'}
+        $script:model.SelectedItem='VX600';Update-LayerControls
+
         foreach($probeCase in @('list','success','failure')){
             $probeFixture=if($probeCase -eq 'list'){@{success=$true;message='Fixture USB';devices=@(@{Key='fixture-USB';DisplayName='Fixture USB detected'})}}elseif($probeCase -eq 'success'){@{success=$true;message='VX600 confirmado por Ethernet. Fixture sin hardware.'}}else{@{success=$false;message='Fixture: driver USB no disponible'}}
             $payload=$probeFixture|ConvertTo-Json -Depth 5 -Compress
@@ -1102,6 +1243,7 @@ function Invoke-GuiSmoke {
             $null=[IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($ScreenshotPath))
             for($tabIndex=0;$tabIndex -lt $script:tabs.TabPages.Count;$tabIndex++){
                 $script:tabs.SelectedIndex=$tabIndex;$script:form.PerformLayout();[Windows.Forms.Application]::DoEvents()
+                if($tabIndex -eq 4){$manualPage.ScrollControlIntoView($layerGroup);[Windows.Forms.Application]::DoEvents()}
                 $bitmap=New-Object Drawing.Bitmap($script:form.Width,$script:form.Height)
                 try{$script:form.DrawToBitmap($bitmap,(New-Object Drawing.Rectangle(0,0,$bitmap.Width,$bitmap.Height)));$bitmap.Save((Join-Path $ScreenshotPath ('{0:00}-{1}.png' -f $tabIndex,@('Estado','Horarios','Secuencias','Solicitudes','Control-manual','Registro')[$tabIndex])),[Drawing.Imaging.ImageFormat]::Png)}finally{$bitmap.Dispose()}
             }
@@ -1131,5 +1273,6 @@ try{
     if($null -ne $script:installerProcess){$script:installerProcess.Dispose()}
     if($null -ne $script:recoveryProcess){$script:recoveryProcess.Dispose()}
     if($null -ne $script:connectionProcess){$script:connectionProcess.Dispose()}
+    if($null -ne $script:layerProcess){$script:layerProcess.Dispose()}
     if($script:recoverySnapshot -and [IO.File]::Exists($script:recoverySnapshot)){[IO.File]::Delete($script:recoverySnapshot)}
 }

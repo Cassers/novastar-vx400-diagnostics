@@ -1,10 +1,20 @@
-# Control local NovaStar VX400 / VX600 — v0.6.0
+# Control local NovaStar VX400 / VX600 — v0.7.0
 
 Extraiga el paquete **completo** y abra **`Abrir-Control-NovaStar.bat`**. Seleccione el modelo original y **Ethernet** o **USB** en Estado. **Probar conexión** consulta la identidad sin cambiar brillo ni contenido. USB añade **Buscar USB** y selección de dispositivo usando el driver original NovaStar/libusb0 instalado; NovaLCT no necesita estar abierto.
 
 Nueva configuración: VX600/Ethernet. Las configuraciones anteriores se conservan como VX400/Ethernet. Detenga el motor antes de cambiar de conexión. Modelos Pro no incluidos. No hay cambio automático de transporte. La primera prueba física de cada enlace se hace en el equipo del cliente.
 
 [Pasos de prueba y requisitos USB/Ethernet](docs/vx600-usb-ethernet.md). Se mantienen secado manual, brillo/negro/entrada/blanco, horarios, solicitudes y recuperación de nuestras instancias. El nombre de los scripts y de la instalación anterior se conserva para poder actualizarla.
+
+## MAIN, PIP1 y PIP2 desde Control manual — v0.7.0
+
+En VX600 original: **Estado → Detener**, espere la confirmación y abra **Control manual → MAIN / PIP1 / PIP2 → Leer capas**. Cada fila muestra Activada/Desactivada y permite **Activar** o **Desactivar** solo esa capa. En USB seleccione primero el dispositivo concreto de Buscar USB. Los estados se consultan bajo demanda; pulse Leer capas para actualizarlos después de cambios externos.
+
+Cada mando lee la configuración actual, cambia únicamente la activación y comprueba la lectura posterior al ACK. Conserva la fuente, posición, tamaño, prioridad, opacidad y bytes restantes. No elige una entrada, no cambia el brillo, no ejecuta SCALE y no envía un desbloqueo del mando físico. Se mantienen bloqueados mientras el motor esté activo, incluidos secado, preparación y enfriamiento; tampoco se permite un mando si otra instancia conserva el control aunque la ventana muestre datos antiguos.
+
+Si el firmware no devuelve un bloque completo y válido, la app muestra el error y no envía una configuración inventada. Si no se confirma la lectura después de una escritura, muestra estado sin confirmar y exige consultar otra vez. Esta ampliación requiere prueba física de las capas por cada transporte; la validación con simuladores no demuestra compatibilidad del firmware del cliente. [Detalles, fuentes y prueba en sitio](docs/capas-manuales.md).
+
+La v0.7.0 también permite que la ventana elevada de Recuperar control espere hasta 15 segundos a que la anterior libere su bloqueo. Las aperturas duplicadas ordinarias siguen rechazándose. La recuperación empieza cuando la nueva ventana ya se muestra.
 
 ## App nativa Windows — v0.5.0
 

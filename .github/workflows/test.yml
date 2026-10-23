@@ -74,11 +74,11 @@ jobs:
         shell: powershell
         run: .\tests\Ownership.Tests.ps1
       - name: Recovery against disposable local controllers only
-        if: ${{ !cancelled() }}
+        if: ${{ success() }}
         shell: powershell
         run: .\tests\Ownership.Windows.Tests.ps1
       - name: Native control task installation and migration
-        if: ${{ !cancelled() }}
+        if: ${{ success() }}
         shell: powershell
         run: .\tests\ControlInstaller.Tests.ps1
       - name: Native interface screenshots

@@ -157,6 +157,7 @@ function Start-OperatorDeployment([string]$Action){
     $script:deploymentError=$script:deploymentOut+'.err'
     $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $script:deploymentProcess=Start-Process -FilePath $exe -ArgumentList $arguments -WindowStyle Hidden -RedirectStandardOutput $script:deploymentOut -RedirectStandardError $script:deploymentError -PassThru
+    $null=$script:deploymentProcess.Handle # Windows PowerShell 5.1 redirected-process ExitCode retention.
     foreach($button in $deploymentButtons.Controls){$button.Enabled=$false}
     $script:notice.Text='Operación en curso. Espere el resultado…'
 }

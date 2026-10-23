@@ -27,9 +27,11 @@ try{
         $stdout=Join-Path $OutputDirectory ($scriptName+'.txt');$stderr=Join-Path $OutputDirectory ($scriptName+'.err.txt')
         $arguments='-NoProfile -STA -ExecutionPolicy RemoteSigned -File "{0}" -ConfigPath "{1}" -OperatorConfigPath "{2}" -DataDirectory "{3}" -SmokeTest -ScreenshotPath "{4}"' -f (Join-Path $fixture $scriptName),$plan,$profile,$data,$OutputDirectory
         $child=Start-Process -FilePath $exe -ArgumentList $arguments -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+        $null=$child.Handle # Preserve ExitCode with redirected streams on Windows PowerShell 5.1.
         try{
             if(-not $child.WaitForExit(45000)){$child.Kill();$child.WaitForExit();throw ($scriptName+' native smoke timed out.')}
             $child.WaitForExit();$code=$child.ExitCode
+            if($null -eq $code){throw 'Windows did not return the native smoke exit code.'}
         }finally{$child.Dispose()}
         $output=@([IO.File]::ReadAllText($stdout),[IO.File]::ReadAllText($stderr))
         if($code -ne 0){throw ($scriptName+' failed: '+($output -join [Environment]::NewLine))}

@@ -118,10 +118,16 @@ class OperatorRuntime(unittest.TestCase):
         return process
 
     def state(self, base):
-        try:
-            return json.loads((base/'data/operator-state.json').read_text(encoding='utf-8-sig'))
-        except (OSError, ValueError):
-            return {}
+        # Windows atomic replacement can briefly deny a fresh file open. Retry the
+        # actual read, never a cached state; callers retain all value assertions.
+        deadline=time.monotonic()+.5
+        while True:
+            try:
+                return json.loads((base/'data/operator-state.json').read_text(encoding='utf-8-sig'))
+            except (OSError, ValueError):
+                if time.monotonic()>=deadline:
+                    return {}
+                time.sleep(.01)
 
     def wait(self, base, process, predicate, timeout=12):
         end = time.monotonic()+timeout

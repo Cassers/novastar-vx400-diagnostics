@@ -47,8 +47,8 @@ function Invoke-Bat([string]$Path,[string]$Arguments=''){
     # %USERNAME% in the BAT path before the launcher's own parsing is exercised.
     Invoke-Owned $cmd ('/D /V:ON /S /C ""%NOVASTAR_TEST_BAT%" '+$Arguments+'"') $Path
 }
-function New-Fixture([string]$Name){
-    $app=Join-Path $temporary ($Name+" app & O'Brien %USERNAME%");$null=[IO.Directory]::CreateDirectory($app)
+function New-Fixture([string]$FixtureName){
+    $app=Join-Path $temporary ($FixtureName+" app & O'Brien %USERNAME%");$null=[IO.Directory]::CreateDirectory($app)
     foreach($bat in @($launchers)+@('Preparar-NovaStar.bat')){
         Copy-Item -LiteralPath (Join-Path $source $bat) -Destination (Join-Path $app $bat)
         Set-Mark (Join-Path $app $bat)
@@ -66,7 +66,7 @@ Import-Module (Join-Path $PSScriptRoot 'Vx400.Schedule.psm1') -Force -ErrorActio
     $nested=Join-Path $app 'nested';$null=[IO.Directory]::CreateDirectory($nested)
     $protected=@('plan.config.json','operator.config.json','pro-access.json','unrelated.ps1','nested\Control-Vx400.ps1')
     foreach($name in $protected){Write-Fixture (Join-Path $app $name) ('{"fixture":"'+$name.Replace('\','/')+'"}')}
-    $outside=Join-Path $temporary ($Name+' outside Control-Vx400.ps1');Write-Fixture $outside 'outside fixture: must retain MOTW'
+    $outside=Join-Path $temporary ($FixtureName+' outside Control-Vx400.ps1');Write-Fixture $outside 'outside fixture: must retain MOTW'
     $snapshots=@()
     foreach($path in @($protected|ForEach-Object{Join-Path $app $_})+@($outside)+@(@($launchers)+@('Preparar-NovaStar.bat')|ForEach-Object{Join-Path $app $_})){
         $snapshots+=@{path=$path;hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash;zone=(Get-Mark $path)}

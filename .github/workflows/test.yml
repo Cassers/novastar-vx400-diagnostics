@@ -26,6 +26,7 @@ jobs:
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -STA -File .\tests\ProAccessGui.Tests.ps1
           if ($LASTEXITCODE -ne 0) { throw 'Pro access dialogs failed' }
       - name: Real Pro login and duplicate-window activation
+        if: ${{ !cancelled() }}
         shell: powershell
         run: .\tests\ProStartup.Windows.Tests.ps1
       - name: Users engine, deployment and media rules

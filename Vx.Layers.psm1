@@ -49,3 +49,30 @@ function New-VxLayerWriteRequest([string]$Layer,[byte[]]$Block,[byte]$Sequence=0
     New-VxFrame -Address (Get-VxLayerAddress $Layer) -Length 48 -Sequence $Sequence -Command 1 -Payload $Block
 }
 Export-ModuleMember -Function Get-VxLayerNumber,Get-VxLayerAddress,ConvertFrom-VxLayerBlock,Assert-VxLayerChanges,New-VxLayerPatch,New-VxLayerReadRequest,New-VxLayerWriteRequest
+
+# Protocol 3.4.2 geometry equivalent of SCALE. No undocumented native SCALE address.
+function New-VxLayerScalePatch {
+    param([Parameter(Mandatory)][object[]]$Snapshot,[Parameter(Mandatory)][int]$CanvasWidth,[Parameter(Mandatory)][int]$CanvasHeight)
+    if($CanvasWidth -lt 1 -or $CanvasWidth -gt 32768 -or $CanvasHeight -lt 1 -or $CanvasHeight -gt 32768){throw 'SCALE requires known configured canvas dimensions 1..32768.'}
+    if($Snapshot.Count -ne 3){throw 'SCALE requires fresh complete three-layer snapshot.'}
+    $views=@();$names=@()
+    foreach($item in $Snapshot){$names+=$item.layer;$views+=ConvertFrom-VxLayerBlock -Block $item.block -Layer $item.layer}
+    if(@($names|Select-Object -Unique).Count -ne 3){throw 'Duplicate layer snapshot.'}
+    $active=@($views|Where-Object {$_.enabled})
+    if($active.Count -eq 0){throw 'No active layer to SCALE.'}
+    # VX600 protocol V1.1 Appendix V: raw 0 bottom, 1 middle, 2 top.
+    # https://www.ezledvisual.com/storage/file/20240926/1727345641282825.pdf (p15)
+    $lowest=($active|Measure-Object -Property priority -Minimum).Minimum
+    $targets=@($active|Where-Object {$_.priority -eq $lowest})
+    if($targets.Count -ne 1){throw 'Ambiguous lowest active layer priority.'}
+    $target=$targets[0]
+    if($target.input.StartsWith('UNKNOWN') -or $target.input -eq 'MOSAIC'){throw 'SCALE source unsupported.'}
+    $source=@($Snapshot|Where-Object {$_.layer -ceq $target.layer})[0]
+    [byte[]]$patched=$source.block.Clone()
+    [Array]::Copy([BitConverter]::GetBytes([uint32]0),0,$patched,5,4)
+    [Array]::Copy([BitConverter]::GetBytes([uint32]0),0,$patched,9,4)
+    [Array]::Copy([BitConverter]::GetBytes([uint32]$CanvasWidth),0,$patched,13,4)
+    [Array]::Copy([BitConverter]::GetBytes([uint32]$CanvasHeight),0,$patched,17,4)
+    [pscustomobject]@{layer=$target.layer;block=$patched}
+}
+Export-ModuleMember -Function New-VxLayerScalePatch

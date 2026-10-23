@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "configured": false,
+  "dailyStart": "04:00",
+  "dailyEnd": "06:00",
+  "idlePercent": 10,
+  "dryPercent": 30,
+  "dryRampMinutes": 24,
+  "dryFallMinutes": 24,
+  "preheatPercent": 25,
+  "preheatMinutes": 240,
+  "cooldownMinutes": 36,
+  "mediaEnabled": true,
+  "mediaFolder": "",
+  "videoFile": "",
+  "blackImageFile": "",
+  "screenDeviceName": "",
+  "allowPrimaryScreen": false,
+  "canvasWidth": 0,
+  "canvasHeight": 0
+}

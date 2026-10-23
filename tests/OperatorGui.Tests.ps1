@@ -24,9 +24,15 @@ try{
     $beforePlan=(Get-FileHash -LiteralPath $plan).Hash;$beforeProfile=(Get-FileHash -LiteralPath $profile).Hash
     $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     foreach($scriptName in @('Control-VxUsuarios.ps1','Configurar-VxUsuarios.ps1')){
-        $output=& $exe -NoProfile -STA -ExecutionPolicy RemoteSigned -File (Join-Path $fixture $scriptName) -ConfigPath $plan -OperatorConfigPath $profile -DataDirectory $data -SmokeTest -ScreenshotPath $OutputDirectory 2>&1
-        $output|Out-File -LiteralPath (Join-Path $OutputDirectory ($scriptName+'.txt')) -Encoding UTF8
-        if($LASTEXITCODE -ne 0){throw ($scriptName+' failed: '+($output -join [Environment]::NewLine))}
+        $stdout=Join-Path $OutputDirectory ($scriptName+'.txt');$stderr=Join-Path $OutputDirectory ($scriptName+'.err.txt')
+        $arguments='-NoProfile -STA -ExecutionPolicy RemoteSigned -File "{0}" -ConfigPath "{1}" -OperatorConfigPath "{2}" -DataDirectory "{3}" -SmokeTest -ScreenshotPath "{4}"' -f (Join-Path $fixture $scriptName),$plan,$profile,$data,$OutputDirectory
+        $child=Start-Process -FilePath $exe -ArgumentList $arguments -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+        try{
+            if(-not $child.WaitForExit(45000)){$child.Kill();$child.WaitForExit();throw ($scriptName+' native smoke timed out.')}
+            $child.WaitForExit();$code=$child.ExitCode
+        }finally{$child.Dispose()}
+        $output=@([IO.File]::ReadAllText($stdout),[IO.File]::ReadAllText($stderr))
+        if($code -ne 0){throw ($scriptName+' failed: '+($output -join [Environment]::NewLine))}
         if(($output -join ' ') -notmatch 'PASS Operator'){throw ($scriptName+' did not report smoke completion.')}
     }
     if([IO.File]::Exists($sentinel)){throw 'Smoke launched an engine, player, recovery, export or installer.'}

@@ -226,7 +226,7 @@ function Invoke-OperatorSmoke {
     if($script:preheatOn.Enabled -or $script:shutdownOn.Enabled){throw 'Smoke: stale state accepted.'}
     $state.updatedUtc=[DateTimeOffset]::UtcNow.ToString('o');$state.ownerProcessId=0;Write-UiJson 'operator-state.json' $state;Update-OperatorUi
     if($script:preheatOn.Enabled){throw 'Smoke: dead owner accepted.'}
-    $state.ownerProcessId=$PID;Write-UiJson 'operator-state.json' $state
+    $state.ownerProcessId=$PID;Write-UiJson 'operator-state.json' $state;Update-OperatorUi
     $script:preheatOn.PerformClick();$command=Read-UiJson 'operator-command.json';Assert-VxOperatorCommand -Command $command -SessionId $session
     if($command.action -cne 'preheat' -or $script:preheatOn.Enabled -or $script:shutdownOn.Enabled){throw 'Smoke: pending command not blocked.'}
     $state.lastCommandId=$command.id;$state.state='PREHEAT';Write-UiJson 'operator-state.json' $state;Update-OperatorUi

@@ -10,10 +10,10 @@ El vídeo se repite sin audio ni controles; `Stretch.Uniform` conserva la propor
 
 ```powershell
 .\Play-VxOperatorMedia.ps1 -OperatorConfigPath .\operator.config.json -ValidateOnly
-.\tests\OperatorMedia.Tests.ps1
+powershell.exe -NoProfile -STA -File .\tests\OperatorMedia.Tests.ps1
 ```
 
-`ValidateOnly` comprueba aceptación del perfil y rutas; no abre ventanas, enumera pantallas ni prueba códecs. Las pruebas usan archivos temporales y comandos sintéticos. En Windows compilan las referencias WPF/WinForms sin crear una ventana. Un archivo `.mp4` válido por extensión todavía puede fallar al decodificar.
+`ValidateOnly` comprueba aceptación del perfil y rutas; no abre ventanas, enumera pantallas ni prueba códecs. Las pruebas usan archivos temporales y comandos sintéticos. En Windows compilan las referencias WPF/WinForms y comprueban una ventana de prueba pequeña: un fallo no ocupa una salida sin seleccionar, conserva cobertura negra cuando está vinculada y se oculta al revocar esa salida. No prueban decodificación de vídeo. Un archivo `.mp4` válido por extensión todavía puede fallar al decodificar.
 
 `-SmokeTest` permite solamente una vista previa desechable de imagen de 320×180, sin pantalla completa ni topmost. Requiere un directorio de datos de pruebas aislado y UUID de sesión; no requiere motor. No usar el directorio de un motor activo. Su resultado confirma enlace nativo/imagen; no demuestra reproducción de vídeo ni colocación física.
 
@@ -23,7 +23,7 @@ El motor invoca `-OperatorConfigPath PATH -DataDirectory PATH -SessionId UUID`. 
 
 `Video` obtiene ACK positivo después de `MediaOpened`, dimensiones de vídeo y avance real de `Position`. Abrir el nombre del archivo no basta. No publica ACK coincidente mientras abre; un fallo o tiempo de espera de 8 segundos publica `success:false`. En reproducción se actualiza el mismo ACK cada segundo. El motor debe mantener BLACK y brillo bajo hasta ese ACK; el helper nunca manda comandos al hardware. `Black` confirma después de cargar/decodificar y pintar la imagen. `Input` oculta la salida para la fuente en vivo existente; `Stop` confirma y termina.
 
-Las órdenes nuevas requieren UUID, sesión vigente, campos exactos y antigüedad máxima de 10 segundos (2 segundos de tolerancia futura). Se rechazan repeticiones y modos desconocidos. Una orden ya aceptada mantiene el bucle aunque su fecha envejezca. El helper exige que `operator-state.json` siga fresco (10 segundos), con la misma sesión y PID vivo. Si desaparece pantalla/archivo, cambia sesión, falla el decodificador o deja de avanzar el vídeo, oculta su ventana y publica error. No reanuda automáticamente. Un mutex local evita dos helpers sobre el mismo directorio.
+Las órdenes nuevas requieren UUID, sesión vigente, campos exactos y antigüedad máxima de 10 segundos (2 segundos de tolerancia futura). Se rechazan repeticiones y modos desconocidos. Una orden ya aceptada mantiene el bucle aunque su fecha envejezca. El helper exige que `operator-state.json` siga fresco (10 segundos), con la misma sesión y PID vivo. Si falla el decodificador, conserva cobertura negra en la salida seleccionada y publica error. Un fallo fatal conserva esa cobertura hasta confirmar Blackout por hardware o recibir Stop explícito; si desaparece la salida o pasa a ser principal sin autorización, deja de ocuparla. Los fallos al publicar el error no eliminan la cobertura. Un nuevo PREHEAT exige una orden explícita y empieza la preparación completa. Un mutex local evita dos helpers sobre el mismo directorio.
 
 Solo se aceptan archivos locales absolutos dentro de la carpeta configurada: vídeo `.mp4/.wmv/.avi/.m4v/.mov`; imagen `.png/.jpg/.jpeg/.bmp`. Se rechazan URL, UNC, unidades de red y enlaces/junctions/reparse points detectables. La carpeta debe permanecer bajo control del operador: la validación no reemplaza permisos de Windows ni impide una sustitución concurrente maliciosa de archivos.
 

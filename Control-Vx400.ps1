@@ -304,6 +304,10 @@ function Open-OperatorEdition([string]$ScriptName,[switch]$OtherInstallation){
         Save-Configuration
     }
     $targetScript=Join-Path $PSScriptRoot $ScriptName
+    if($ScriptName -ceq 'Control-VxUsuarios.ps1'){
+        $targetScript=Join-Path (Split-Path $targetConfig -Parent) 'Control-VxUsuarios.ps1'
+        if(-not [IO.File]::Exists($targetScript)){throw 'La instalación Usuarios elegida está incompleta. Extraiga o exporte su paquete completo.'}
+    }
     foreach($path in @($targetScript,$targetConfig,$targetData)){if($path.Contains('"')){throw 'Ruta no válida.'}}
     $arguments='-NoProfile -STA -ExecutionPolicy RemoteSigned -File "{0}" -ConfigPath "{1}" -DataDirectory "{2}"' -f $targetScript,$targetConfig,$targetData
     $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'

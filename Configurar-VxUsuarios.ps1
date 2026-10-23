@@ -152,7 +152,7 @@ function Start-OperatorDeployment([string]$Action){
     }
     foreach($path in @($ConfigPath,$OperatorConfigPath,$DataDirectory,$target,$PSScriptRoot)){if($path.Contains('"')){throw 'Ruta no válida.'}}
     $arguments='-NoProfile -ExecutionPolicy RemoteSigned -File "{0}" -ConfigPath "{1}" -OperatorConfigPath "{2}"' -f (Join-Path $PSScriptRoot $entry),$ConfigPath,$OperatorConfigPath
-    if($Action -eq 'export'){$arguments+=' -Destination "'+$target+'"'}else{$arguments+=' -DataDirectory "'+$DataDirectory+'"';if($Action -eq 'remove'){$arguments+=' -Remove'}}
+    if($Action -eq 'export'){$arguments+=' -Destination "'+$target+'"'}else{$arguments+=' -DataDirectory "'+$DataDirectory+'" -ApplicationDirectory "'+(Split-Path $ConfigPath -Parent)+'"';if($Action -eq 'remove'){$arguments+=' -Remove'}}
     $script:deploymentOut=Join-Path ([IO.Path]::GetTempPath()) ('vx-deploy-'+[guid]::NewGuid().ToString('N')+'.out')
     $script:deploymentError=$script:deploymentOut+'.err'
     $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'

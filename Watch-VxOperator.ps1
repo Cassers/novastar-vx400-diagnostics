@@ -19,7 +19,7 @@ try{
 if($ValidateOnly){Write-Output 'Operator configuration valid.';exit 0}
 $utf8=New-Object Text.UTF8Encoding($false)
 $script:state=[ordered]@{schemaVersion=1;ownerProcessId=$PID;sessionId=[Guid]::NewGuid().ToString();updatedUtc='';communication='unknown';outputBlackoutConfirmed=$false;state='BLACK';phase='';brightnessRequestedPercent=$null;remainingSeconds=0;preheatReady=$false;layers=@();lastCommandId=$null;lastCommandResult='';operatorPending=$false;message='Starting'}
-$script:persist=[ordered]@{schemaVersion=1;sessionId=$script:state.sessionId;lastConsumedDay='';consumedCommandIds=@();operatorPending=$false;active=$false}
+$script:persist=[ordered]@{schemaVersion=1;sessionId=$script:state.sessionId;lastConsumedDay='';consumedCommandIds=@();operatorPending=$false;active=$false;legacyStateHash=''}
 $script:sequence=0;$script:identity=$null;$script:identityStamp=0L;$script:identityUtc=[DateTimeOffset]::MinValue
 $script:brightness=-1;$script:pattern='unknown';$script:mode='';$script:contentReady=$false;$script:mediaRequest=$null;$script:mediaStart=0.0
 $script:modeStart=0.0;$script:coolFrom=0.0;$script:drySeconds=0.0;$script:lastRejected=''
@@ -209,14 +209,38 @@ try{
     if(-not $owns){throw 'Another watcher owns this endpoint.'}
     $null=[IO.Directory]::CreateDirectory($DataDirectory)
     $lock=[IO.File]::Open((Join-Path $DataDirectory 'watcher.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    # A damaged ledger is uncertainty, never permission to start a fresh daily run.
+    $script:persist.operatorPending=$true
+    $ledgerExisted=[IO.File]::Exists((Join-Path $DataDirectory 'operator-session.json'))
     $previous=Read-OperatorJson 'operator-session.json' 131072
+    if($ledgerExisted -and $null -eq $previous){throw 'Invalid empty persisted operator session.'}
     if($null -ne $previous){
         if($previous.schemaVersion -ne 1 -or $previous.operatorPending -isnot [bool] -or $previous.active -isnot [bool] -or $previous.lastConsumedDay -isnot [string] -or ($previous.lastConsumedDay -ne '' -and $previous.lastConsumedDay -notmatch '^\d{4}-\d{2}-\d{2}$')){throw 'Invalid persisted operator session.'}
+        if($null -ne $previous.PSObject.Properties['legacyStateHash']){
+            if($previous.legacyStateHash -isnot [string] -or $previous.legacyStateHash -cnotmatch '^(?:[A-F0-9]{64})?$'){throw 'Invalid legacy state fingerprint.'}
+            $script:persist.legacyStateHash=$previous.legacyStateHash
+        }
         $script:persist.lastConsumedDay=$previous.lastConsumedDay
         $script:persist.operatorPending=($previous.operatorPending -or $previous.active)
+    }else{$script:persist.operatorPending=$false}
+    $legacyPath=Join-Path $DataDirectory 'estado.json'
+    if([IO.File]::Exists($legacyPath)){
+        try{
+            if((Get-Item -LiteralPath $legacyPath).Length -gt 1048576){throw 'Legacy state too large.'}
+            $legacyRaw=Read-VxSharedText $legacyPath
+            if((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')){$oldPlan=ConvertFrom-Json -InputObject $legacyRaw -DateKind String}else{$oldPlan=$legacyRaw|ConvertFrom-Json}
+            if($oldPlan -isnot [pscustomobject] -or $null -eq $oldPlan.PSObject.Properties['state'] -or $oldPlan.state -isnot [string] -or $oldPlan.state -cnotin @('BOOT','WAITING','BLACK','STOPPED','DRY','PREHEAT','OPERATING','COOLDOWN','FAULT','WAIT_OPERATOR')){throw 'Invalid legacy controller state.'}
+            if($null -ne $oldPlan.PSObject.Properties['operatorPending'] -and $oldPlan.operatorPending -isnot [bool]){throw 'Invalid legacy operator gate.'}
+            $sha=[Security.Cryptography.SHA256]::Create()
+            try{$legacyHash=[BitConverter]::ToString($sha.ComputeHash($utf8.GetBytes($legacyRaw))).Replace('-','')}finally{$sha.Dispose()}
+            # Content provenance survives clock rollback and copied file timestamps.
+            # A genuine new Pro run/gate changes its PID, updatedUtc or gate UUID.
+            if($legacyHash -cne $script:persist.legacyStateHash){
+                if(($null -ne $oldPlan.PSObject.Properties['operatorPending'] -and $oldPlan.operatorPending) -or $oldPlan.state -in @('DRY','PREHEAT','OPERATING','COOLDOWN','FAULT','WAIT_OPERATOR')){$script:persist.operatorPending=$true}
+                $script:persist.legacyStateHash=$legacyHash
+            }
+        }catch{$script:persist.operatorPending=$true;throw}
     }
-    $oldPlan=Read-OperatorJson 'estado.json' 1048576
-    if($null -ne $oldPlan -and (($null -ne $oldPlan.PSObject.Properties['operatorPending'] -and $oldPlan.operatorPending) -or ($null -ne $oldPlan.PSObject.Properties['state'] -and $oldPlan.state -in @('DRY','PREHEAT','OPERATING','COOLDOWN','FAULT','WAIT_OPERATOR')))){$script:persist.operatorPending=$true}
     $script:state.operatorPending=$script:persist.operatorPending
     if($script:persist.operatorPending){$script:state.state='WAIT_OPERATOR';$script:state.message='Previous interruption: explicit full preparation required.'}
     Save-OperatorPersistent;Save-OperatorState

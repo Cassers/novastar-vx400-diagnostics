@@ -237,6 +237,61 @@ class OperatorRuntime(unittest.TestCase):
             self.assertFalse(writes(device))
             self.assertTrue(self.state(base)['operatorPending'])
 
+    def test_legacy_gate_imported_once_and_newer_legacy_gate_preserved(self):
+        with PlanDevice() as device, self.fixture() as directory:
+            base=self.setup_config(directory,device)
+            (base/'data').mkdir()
+            atomic_json(base/'data/estado.json',dict(operatorPending=True,state='WAIT_OPERATOR'))
+            process=self.launch(base)
+            state=self.wait(base,process,lambda s:s.get('communication')=='reachable' and s.get('operatorPending'))
+            self.command(base,state['sessionId'],'preheat')
+            state=self.wait(base,process,lambda s:s.get('state')=='READY')
+            self.command(base,state['sessionId'],'shutdown')
+            self.wait(base,process,lambda s:s.get('state')=='BLACK' and not s.get('operatorPending'))
+            self.stop(base,process)
+
+            process=self.launch(base)
+            state=self.wait(base,process,lambda s:s.get('communication')=='reachable')
+            self.assertEqual(state['state'],'BLACK')
+            self.assertFalse(state['operatorPending'])
+            self.stop(base,process)
+            time.sleep(.05)
+            atomic_json(base/'data/estado.json',dict(operatorPending=True,state='WAIT_OPERATOR',operatorGateId=str(uuid.uuid4())))
+            older=(base/'data/operator-session.json').stat().st_mtime-3600
+            os.utime(base/'data/estado.json',(older,older))
+            process=self.launch(base)
+            self.wait(base,process,lambda s:s.get('communication')=='reachable' and s.get('operatorPending'))
+            self.stop(base,process)
+
+    def test_corrupt_ledger_cannot_enable_a_new_daily_run(self):
+        with PlanDevice() as device, self.fixture() as directory:
+            base=self.setup_config(directory,device)
+            (base/'data').mkdir()
+            (base/'data/operator-session.json').write_text('{invalid-json',encoding='utf-8')
+            process=self.launch(base)
+            out,err=process.communicate(timeout=10)
+            self.assertEqual(process.returncode,2,out+err)
+            self.assertFalse(device.requests,'Corrupt ledger startup must not access hardware')
+            ledger=json.loads((base/'data/operator-session.json').read_text())
+            self.assertTrue(ledger['operatorPending'])
+            process=self.launch(base)
+            state=self.wait(base,process,lambda s:s.get('communication')=='reachable')
+            self.assertEqual(state['state'],'WAIT_OPERATOR')
+            self.assertTrue(state['operatorPending'])
+            self.stop(base,process)
+
+    def test_semantically_invalid_legacy_history_fails_closed(self):
+        with PlanDevice() as device, self.fixture() as directory:
+            base=self.setup_config(directory,device)
+            (base/'data').mkdir()
+            atomic_json(base/'data/estado.json',{})
+            process=self.launch(base)
+            out,err=process.communicate(timeout=10)
+            self.assertEqual(process.returncode,2,out+err)
+            self.assertFalse(device.requests)
+            ledger=json.loads((base/'data/operator-session.json').read_text())
+            self.assertTrue(ledger['operatorPending'])
+
     def test_endpoint_contention_never_overwrites_owner_state(self):
         with PlanDevice() as device, self.fixture() as directory:
             base=self.setup_config(directory,device)

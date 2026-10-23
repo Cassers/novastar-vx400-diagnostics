@@ -157,7 +157,8 @@ function Read-VxProDialog {
             $result=@{}
             foreach($name in $fields){
                 $secure=New-Object Security.SecureString
-                foreach($character in $boxes[$name].Text.ToCharArray()){$secure.AppendChar($character)}
+                $entered=$boxes[$name].Text.ToCharArray()
+                try {foreach($character in $entered){$secure.AppendChar($character)}} finally {[Array]::Clear($entered,0,$entered.Length)}
                 $secure.MakeReadOnly();$result[$name]=$secure
             }
         }

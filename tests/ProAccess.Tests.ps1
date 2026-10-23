@@ -72,8 +72,15 @@ try {
     }
     $invalid=Clone $policy;$invalid|Add-Member NoteProperty bypass $true;Save $invalid $path
     Reject {Read-VxProAccessPolicy $path} 'Unknown field rejected'
-    $raw=($policy|ConvertTo-Json).Replace('"schemaVersion": 1','"schemaVersion": 1, "schemaVersion": 1')
-    [IO.File]::WriteAllText($path,$raw);Reject {Read-VxProAccessPolicy $path} 'Duplicate key rejected'
+    # Windows PowerShell 5.1 and PS7 format JSON whitespace differently.
+    $schemaKey=[regex]::new('"schemaVersion"\s*:\s*1(?=\s*[,}])')
+    $compact=$policy|ConvertTo-Json -Compress
+    $spaced=$schemaKey.Replace($compact,'"schemaVersion" :  1',1)
+    foreach($json in @(($policy|ConvertTo-Json),$compact,$spaced)) {
+        $raw=$schemaKey.Replace($json,'"schemaVersion":1,"schemaVersion":1',1)
+        Assert ([regex]::Matches($raw,'"schemaVersion"\s*:').Count -eq 2) 'Duplicate fixture contains exactly two schema keys'
+        [IO.File]::WriteAllText($path,$raw);Reject {Read-VxProAccessPolicy $path} 'Duplicate key rejected'
+    }
     Save $policy $path;$original=[IO.File]::ReadAllText($path)
     foreach($new in @($short,$password)) {Reject {Set-VxProPassword $path $password $new} 'Invalid replacement rejected';Assert ([IO.File]::ReadAllText($path) -ceq $original) 'Invalid replacement preserves policy'}
     Reject {Set-VxProPassword $path $wrong $other} 'Current secret required'

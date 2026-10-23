@@ -18,7 +18,7 @@ $zone="[ZoneTransfer]`r`nZoneId=3`r`nHostUrl=https://example.invalid/release.zip
 $utf8=New-Object Text.UTF8Encoding($true)
 $children=New-Object 'System.Collections.Generic.List[System.Diagnostics.Process]'
 function Assert($Condition,[string]$Message){if(-not $Condition){throw $Message}}
-function Set-Mark([string]$Path){[IO.File]::WriteAllText(($Path+':Zone.Identifier'),$zone)}
+function Set-Mark([string]$Path){Set-Content -LiteralPath $Path -Stream Zone.Identifier -Value $zone -NoNewline -Encoding ASCII}
 function Get-Mark([string]$Path){Get-Content -LiteralPath $Path -Stream Zone.Identifier -Raw -ErrorAction Stop}
 function Test-Mark([string]$Path){$null -ne (Get-Item -LiteralPath $Path -Stream Zone.Identifier -ErrorAction SilentlyContinue)}
 function Write-Fixture([string]$Path,[string]$Text){[IO.File]::WriteAllText($Path,$Text,$utf8);Set-Mark $Path}

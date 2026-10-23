@@ -10,6 +10,7 @@ import tempfile
 import time
 import unittest
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from plan_runtime_tests import PlanDevice, atomic_json, stamp, writes, brightness
 from runtime_tests import ROOT, receive, make_reply
@@ -27,6 +28,8 @@ class OperatorLayerDevice(PlanDevice):
         for i,data in enumerate(self.blocks):
             data[3]=i
         self.mismatch=mismatch
+        self.write_gate=None
+        self.write_blocked=threading.Event()
 
     def run(self):
         while not self.stop.is_set():
@@ -56,6 +59,11 @@ class OperatorLayerDevice(PlanDevice):
                             payload=bytes(self.blocks[index])
                     elif not is_write:
                         raise AssertionError(address)
+                    if is_write and address==0x13000004 and self.write_gate is not None:
+                        gate=self.write_gate
+                        self.write_gate=None
+                        self.write_blocked.set()
+                        gate.wait(5)
                     connection.sendall(make_reply(request,payload))
                 except (BrokenPipeError,ConnectionResetError):
                     pass
@@ -64,6 +72,21 @@ class OperatorLayerDevice(PlanDevice):
 
 @unittest.skipUnless(PS, 'PowerShell unavailable')
 class OperatorRuntime(unittest.TestCase):
+    def setUp(self):
+        self.children=[]
+
+    @contextmanager
+    def fixture(self):
+        # Release exact test children BEFORE TemporaryDirectory removes Windows locks,
+        # including when an assertion fails. unittest cleanups alone run too late.
+        with tempfile.TemporaryDirectory() as directory:
+            try:
+                yield directory
+            finally:
+                for base,process,cleanup in self.children:
+                    if base==Path(directory):
+                        cleanup()
+
     def setup_config(self, directory, device, **settings):
         base = Path(directory)
         plan = json.loads((ROOT/'plan.config.json').read_text(encoding='utf-8-sig'))
@@ -90,6 +113,7 @@ class OperatorRuntime(unittest.TestCase):
             if process.poll() is None:
                 process.kill()
             process.communicate(timeout=10)
+        self.children.append((base,process,cleanup))
         self.addCleanup(cleanup)
         return process
 
@@ -123,7 +147,7 @@ class OperatorRuntime(unittest.TestCase):
         self.assertEqual(process.returncode, code, out+'\n'+err)
 
     def test_validate_only_no_directory_or_network(self):
-        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+        with PlanDevice() as device, self.fixture() as directory:
             base = self.setup_config(directory, device)
             process = self.launch(base, extra=['-ValidateOnly'])
             out, err = process.communicate(timeout=10)
@@ -132,7 +156,7 @@ class OperatorRuntime(unittest.TestCase):
             self.assertFalse(device.requests)
 
     def test_monitor_never_writes(self):
-        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+        with PlanDevice() as device, self.fixture() as directory:
             base = self.setup_config(directory, device)
             process = self.launch(base, control=False, polls=4)
             out, err = process.communicate(timeout=10)
@@ -140,7 +164,7 @@ class OperatorRuntime(unittest.TestCase):
             self.assertFalse(writes(device))
 
     def test_preheat_ready_shutdown_interlocks_replay(self):
-        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+        with PlanDevice() as device, self.fixture() as directory:
             base = self.setup_config(directory, device)
             process = self.launch(base)
             state = self.wait(base, process, lambda s:s.get('communication')=='reachable' and s.get('state')=='BLACK')
@@ -166,7 +190,7 @@ class OperatorRuntime(unittest.TestCase):
             self.assertFalse(device.errors)
 
     def test_stale_extra_fields_old_session_rejected(self):
-        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+        with PlanDevice() as device, self.fixture() as directory:
             base = self.setup_config(directory, device)
             process = self.launch(base)
             state=self.wait(base, process, lambda s:s.get('communication')=='reachable')
@@ -177,7 +201,7 @@ class OperatorRuntime(unittest.TestCase):
             self.stop(base, process)
 
     def test_loss_gates_no_automatic_resume_restart(self):
-        with PlanDevice(drop_read_at=range(12,15)) as device, tempfile.TemporaryDirectory() as directory:
+        with PlanDevice(drop_read_at=range(12,15)) as device, self.fixture() as directory:
             base = self.setup_config(directory, device, preheatMinutes=.03)
             process = self.launch(base)
             state=self.wait(base, process, lambda s:s.get('communication')=='reachable')
@@ -199,7 +223,7 @@ class OperatorRuntime(unittest.TestCase):
             self.stop(base, process)
 
     def test_wrong_model_no_write(self):
-        with PlanDevice(model_id=0x620E) as device, tempfile.TemporaryDirectory() as directory:
+        with PlanDevice(model_id=0x620E) as device, self.fixture() as directory:
             base=self.setup_config(directory, device)
             process=self.launch(base,polls=3)
             out,err=process.communicate(timeout=10)
@@ -208,7 +232,7 @@ class OperatorRuntime(unittest.TestCase):
             self.assertTrue(self.state(base)['operatorPending'])
 
     def test_endpoint_contention_never_overwrites_owner_state(self):
-        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+        with PlanDevice() as device, self.fixture() as directory:
             base=self.setup_config(directory,device)
             first=self.launch(base)
             owner=self.wait(base,first,lambda s:s.get('communication')=='reachable')
@@ -220,7 +244,7 @@ class OperatorRuntime(unittest.TestCase):
 
 
     def test_ready_layer_switch_and_scale_preserve_all_other_bytes(self):
-        with OperatorLayerDevice() as device, tempfile.TemporaryDirectory() as directory:
+        with OperatorLayerDevice() as device, self.fixture() as directory:
             base=self.setup_config(directory,device,canvasWidth=1600,canvasHeight=900)
             plan=json.loads((base/'plan.json').read_text());plan['deviceModel']='VX600';atomic_json(base/'plan.json',plan)
             process=self.launch(base)
@@ -240,7 +264,7 @@ class OperatorRuntime(unittest.TestCase):
             self.assertFalse(device.errors)
 
     def test_layer_side_effect_opens_gate(self):
-        with OperatorLayerDevice(mismatch=True) as device, tempfile.TemporaryDirectory() as directory:
+        with OperatorLayerDevice(mismatch=True) as device, self.fixture() as directory:
             base=self.setup_config(directory,device)
             plan=json.loads((base/'plan.json').read_text());plan['deviceModel']='VX600';atomic_json(base/'plan.json',plan)
             process=self.launch(base)
@@ -252,13 +276,37 @@ class OperatorRuntime(unittest.TestCase):
             self.assertIn('readback mismatch',state['message'])
             self.stop(base,process)
 
+    def test_command_remains_pending_until_display_ack(self):
+        with OperatorLayerDevice() as device, self.fixture() as directory:
+            base=self.setup_config(directory,device)
+            plan=json.loads((base/'plan.json').read_text())
+            plan.update(deviceModel='VX600',timeoutMs=5000,maximumObservationGapSeconds=10)
+            atomic_json(base/'plan.json',plan)
+            process=self.launch(base)
+            release=threading.Event()
+            try:
+                state=self.wait(base,process,lambda s:s.get('communication')=='reachable')
+                prepare=self.command(base,state['sessionId'],'preheat')
+                self.wait(base,process,lambda s:s.get('state')=='READY' and s.get('lastCommandId')==prepare['id'])
+                device.write_gate=release
+                shutdown=self.command(base,state['sessionId'],'shutdown')
+                self.assertTrue(device.write_blocked.wait(3),'Display write never reached delayed ACK')
+                pending=self.wait(base,process,lambda s:s.get('state')=='COOLDOWN')
+                self.assertNotEqual(pending['lastCommandId'],shutdown['id'])
+                self.assertFalse(pending['outputBlackoutConfirmed'])
+                release.set()
+                self.wait(base,process,lambda s:s.get('lastCommandId')==shutdown['id'])
+            finally:
+                release.set()
+                self.stop(base,process)
+
 
     def test_daily_consumed_before_start_and_no_restart_resume(self):
         now=datetime.now(timezone.utc)
         end=now+timedelta(minutes=2)
         if end.date()!=now.date():
             self.skipTest('Synthetic daily fixture crosses midnight')
-        with PlanDevice() as device,tempfile.TemporaryDirectory() as directory:
+        with PlanDevice() as device,self.fixture() as directory:
             base=self.setup_config(directory,device,dailyStart=now.strftime('%H:%M'),dailyEnd=end.strftime('%H:%M'),dryRampMinutes=.003,dryFallMinutes=.003)
             plan=json.loads((base/'plan.json').read_text());plan.update(timeZone='UTC',maximumObservationGapSeconds=120);atomic_json(base/'plan.json',plan)
             process=self.launch(base)
@@ -273,7 +321,7 @@ class OperatorRuntime(unittest.TestCase):
 
     @unittest.skipIf(os.name=='nt','POSIX suspension harness; Windows gap covered by clock logic')
     def test_observation_gap_discards_active_preheat(self):
-        with PlanDevice() as device,tempfile.TemporaryDirectory() as directory:
+        with PlanDevice() as device,self.fixture() as directory:
             base=self.setup_config(directory,device,preheatMinutes=.2)
             process=self.launch(base)
             state=self.wait(base,process,lambda s:s.get('communication')=='reachable')
@@ -288,7 +336,7 @@ class OperatorRuntime(unittest.TestCase):
 
 
     def test_scale_unknown_canvas_rejects_without_hardware_write(self):
-        with OperatorLayerDevice() as device,tempfile.TemporaryDirectory() as directory:
+        with OperatorLayerDevice() as device,self.fixture() as directory:
             base=self.setup_config(directory,device)
             plan=json.loads((base/'plan.json').read_text());plan['deviceModel']='VX600';atomic_json(base/'plan.json',plan)
             process=self.launch(base)
@@ -307,7 +355,7 @@ class OperatorRuntime(unittest.TestCase):
         now=datetime.now(timezone.utc)
         if now.hour==0 and now.minute<1:
             self.skipTest('Fixture requires time later than00:01UTC')
-        with PlanDevice() as device,tempfile.TemporaryDirectory() as directory:
+        with PlanDevice() as device,self.fixture() as directory:
             base=self.setup_config(directory,device,dailyStart='00:00',dailyEnd='00:01',dryRampMinutes=.003,dryFallMinutes=.003)
             plan=json.loads((base/'plan.json').read_text());plan['timeZone']='UTC';atomic_json(base/'plan.json',plan)
             process=self.launch(base)
@@ -320,7 +368,7 @@ class OperatorRuntime(unittest.TestCase):
             self.stop(base,process)
 
     def test_previous_unclean_active_gates_startup(self):
-        with PlanDevice() as device, tempfile.TemporaryDirectory() as directory:
+        with PlanDevice() as device, self.fixture() as directory:
             base=self.setup_config(directory,device)
             (base/'data').mkdir()
             atomic_json(base/'data/operator-session.json',dict(schemaVersion=1,sessionId=str(uuid.uuid4()),lastConsumedDay='2026-01-01',consumedCommandIds=[],operatorPending=False,active=True))

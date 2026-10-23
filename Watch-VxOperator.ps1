@@ -176,7 +176,10 @@ function Receive-OperatorCommand {
     catch{$script:lastRejected=$id;$script:state.lastCommandId=$id;$script:state.lastCommandResult='Rejected: '+$_.Exception.Message;return}
     if($script:persist.consumedCommandIds.Count -ge 1024){throw 'Command cache full; restart owner for a new session.'}
     $script:persist.consumedCommandIds+= $command.id;Save-OperatorPersistent
-    $script:state.lastCommandId=$command.id;$script:state.lastCommandResult='Accepted'
+    # Display transitions publish intermediate safety state. Keep the prior completed
+    # command ID until this command has actually finished, so GUIs retain pending.
+    $script:state.lastCommandResult='Accepted'
+    try{
     if(-not $EnableControl){$script:state.lastCommandResult='Rejected: monitor only';return}
     switch($command.action){
         'preheat'{
@@ -194,6 +197,8 @@ function Receive-OperatorCommand {
             Apply-OperatorLayer $command
         }
     }
+    }catch{$script:state.lastCommandResult='Failed: '+$_.Exception.Message;throw}
+    finally{$script:state.lastCommandId=$command.id}
 }
 try{
     $sha=[Security.Cryptography.SHA256]::Create()

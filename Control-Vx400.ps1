@@ -289,6 +289,28 @@ function Quote-Argument([string]$Value) {
     return '"'+$Value+'"'
 }
 function Get-WindowsPowerShell { return Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe' }
+
+function Open-OperatorEdition([string]$ScriptName,[switch]$OtherInstallation){
+    if($script:smoke){Set-Notice 'Ediciones deshabilitadas en SmokeTest.';return}
+    $targetConfig=$script:configPath;$targetData=$script:dataDirectory
+    if($OtherInstallation){
+        $dialog=New-Object Windows.Forms.FolderBrowserDialog
+        $dialog.Description='Seleccione la carpeta Usuarios que contiene plan.config.json y operator.config.json.'
+        try{if($dialog.ShowDialog() -ne 'OK'){return};$folder=$dialog.SelectedPath}finally{$dialog.Dispose()}
+        $targetConfig=Join-Path $folder 'plan.config.json';$targetData=Join-Path $folder 'plan-data'
+        if(-not [IO.File]::Exists($targetConfig) -or -not [IO.File]::Exists((Join-Path $folder 'operator.config.json'))){throw 'Seleccione una instalación Usuarios completa.'}
+    }else{
+        if(Test-Running){throw 'Solicite parada y espere antes de abrir la otra edición; comparte la conexión y el perfil.'}
+        Save-Configuration
+    }
+    $targetScript=Join-Path $PSScriptRoot $ScriptName
+    foreach($path in @($targetScript,$targetConfig,$targetData)){if($path.Contains('"')){throw 'Ruta no válida.'}}
+    $arguments='-NoProfile -STA -ExecutionPolicy RemoteSigned -File "{0}" -ConfigPath "{1}" -DataDirectory "{2}"' -f $targetScript,$targetConfig,$targetData
+    $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $null=Start-Process -FilePath $exe -ArgumentList $arguments -WindowStyle Hidden
+    Set-Notice 'Edición abierta con esta instalación. Los ajustes de Usuarios se guardan en operator.config.json.'
+}
+
 function Start-GuiChildProcess([string]$Arguments,[string]$ErrorPath,[string]$OutputPath='') {
     $options=@{FilePath=(Get-WindowsPowerShell);ArgumentList=$Arguments;WindowStyle='Hidden';PassThru=$true;RedirectStandardError=$ErrorPath}
     if(-not [string]::IsNullOrWhiteSpace($OutputPath)){$options.RedirectStandardOutput=$OutputPath}
@@ -755,7 +777,7 @@ function Update-LayerResult {
 }
 
 function Update-ConnectionLabels {
-    $script:form.Text='NovaStar '+$script:config.deviceModel+' · Control local v0.7.0'
+    $script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.0'
     $script:headerTitle.Text=$script:config.deviceModel+'  /  Control local'
     $destination=if($script:config.connectionType -eq 'USB'){'USB · '+$(if($script:config.usbDeviceKey){$script:config.usbDeviceKey}else{'selección automática'})}else{'Ethernet · '+$script:config.deviceAddress+':'+$script:config.tcpPort}
     $script:endpoint.Text=$destination+'  ·  '+$script:config.timeZone
@@ -817,7 +839,7 @@ function Update-ConnectionProbe {
 
 
 $script:form=New-Object Windows.Forms.Form
-$script:form.Text='NovaStar '+$script:config.deviceModel+' · Control local v0.7.0'
+$script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.0'
 $script:form.ClientSize=New-Object Drawing.Size(1200,860)
 $script:form.MinimumSize=New-Object Drawing.Size(1050,700)
 $script:form.StartPosition='CenterScreen';$script:form.BackColor=$script:background
@@ -836,14 +858,17 @@ $script:tabs=New-Object Windows.Forms.TabControl;$script:tabs.Dock='Fill';$scrip
 $script:form.Controls.Add($script:tabs);$script:form.Controls.Add($footer);$script:form.Controls.Add($header)
 
 $statePage=New-Page 'Estado';$statePage.AutoScroll=$true;$stateStack=New-Stack $statePage 6
-$stateStack.Dock='Top';$stateStack.Height=840
+$stateStack.Dock='Top';$stateStack.Height=890
 $actions=New-Flow
 $monitor=New-Button 'Iniciar monitor' $true;$monitor.Add_Click({Invoke-UiAction {Start-Controller $false}});$actions.Controls.Add($monitor)
 $control=New-Button 'Iniciar control';$control.Add_Click({Invoke-UiAction {Start-Controller $true}});$actions.Controls.Add($control)
 $stop=New-Button 'Detener';$stop.Add_Click({Invoke-UiAction {Request-Stop}});$actions.Controls.Add($stop)
 $install=New-Button 'Instalar al iniciar Windows';$install.Add_Click({Invoke-UiAction {if(Test-Running){throw 'Detenga el controlador antes de instalar o actualizar el inicio automático.'};Save-Configuration;Begin-Installer -Action install -Control $false}});$actions.Controls.Add($install)
 $remove=New-Button 'Quitar inicio automático';$remove.Add_Click({Invoke-UiAction {if(Test-Running){throw 'Pulse Detener y espere antes de quitar el inicio automático.'};Begin-Installer -Action remove}});$actions.Controls.Add($remove)
-Add-StackRow $stateStack $actions 0 55
+$operatorConfig=New-Button 'Configurar Usuarios';$operatorConfig.Add_Click({Invoke-UiAction {Open-OperatorEdition 'Configurar-VxUsuarios.ps1'}});$actions.Controls.Add($operatorConfig)
+$operatorOpen=New-Button 'Abrir Usuarios';$operatorOpen.Add_Click({Invoke-UiAction {Open-OperatorEdition 'Control-VxUsuarios.ps1'}});$actions.Controls.Add($operatorOpen)
+$operatorOther=New-Button 'Otra instalación Usuarios…';$operatorOther.Add_Click({Invoke-UiAction {Open-OperatorEdition 'Control-Vx400.ps1' -OtherInstallation}});$actions.Controls.Add($operatorOther)
+Add-StackRow $stateStack $actions 0 105
 $cards=New-Object Windows.Forms.TableLayoutPanel;$cards.ColumnCount=4;$cards.RowCount=1
 foreach($cardIndex in 0..3){$null=$cards.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::Percent,25)))}
 $cardTitles=@('COMUNICACIÓN','ESTADO / FASE','BRILLO SOLICITADO','TIEMPO RESTANTE')

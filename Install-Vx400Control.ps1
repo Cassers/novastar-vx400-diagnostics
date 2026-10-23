@@ -106,7 +106,7 @@ try {
         Assert-OwnedControlDirectory $installRoot $dataRoot
     }
     $sourceConfig=[IO.Path]::GetFullPath($ConfigPath)
-    $names=@('Watch-Vx400Plan.ps1','Vx400.Schedule.psm1','Vx400.Protocol.psm1','Vx.Connection.psm1','Vx.Usb.psm1','Vx.Usb.Native.cs','Test-VxConnection.ps1','Abrir-Control-NovaStar.bat','Control-Vx400.ps1','Set-Vx400Manual.ps1','Invoke-VxLayer.ps1','Vx.Layers.psm1','Recover-Vx400.ps1','Vx400.Ownership.psm1','Abrir-Control-VX400.bat','Install-Vx400Control.ps1')
+    $names=@('Watch-Vx400Plan.ps1','Vx400.Schedule.psm1','Vx400.Protocol.psm1','Vx.Connection.psm1','Vx.Usb.psm1','Vx.Usb.Native.cs','Test-VxConnection.ps1','Abrir-Control-NovaStar.bat','Control-Vx400.ps1','Set-Vx400Manual.ps1','Invoke-VxLayer.ps1','Vx.Layers.psm1','Recover-Vx400.ps1','Vx400.Ownership.psm1','Abrir-Control-VX400.bat','Install-Vx400Control.ps1','Abrir-Control-Pro.bat','Abrir-Control-Usuarios.bat','Control-VxUsuarios.ps1','Configurar-VxUsuarios.ps1','Vx.Operator.psm1','Watch-VxOperator.ps1','Play-VxOperatorMedia.ps1','Vx.Operator.Media.cs','Recover-VxOperatorUi.ps1','Vx.Operator.Deployment.psm1','Export-VxUsuarios.ps1','Install-VxUsuariosStartup.ps1')
     foreach ($name in $names) {
         $path=Join-Path $PSScriptRoot $name
         Assert-RealPath $path
@@ -126,7 +126,7 @@ try {
         if (-not [string]::IsNullOrWhiteSpace($SourceDataDirectory) -and
             [IO.Path]::GetFullPath($SourceDataDirectory) -ine [IO.Path]::GetFullPath($dataRoot)) {
             Assert-RealPath $SourceDataDirectory
-            foreach ($dataName in @('solicitudes.json','estado.json','eventos.jsonl','eventos.jsonl.1','eventos.jsonl.2','eventos.jsonl.3','eventos.jsonl.4','eventos.jsonl.5')) {
+            foreach ($dataName in @('operator-session.json','operator-state.json','solicitudes.json','estado.json','eventos.jsonl','eventos.jsonl.1','eventos.jsonl.2','eventos.jsonl.3','eventos.jsonl.4','eventos.jsonl.5')) {
                 $sourceData=Join-Path $SourceDataDirectory $dataName
                 if (Test-Path -LiteralPath $sourceData -PathType Leaf) {
                     Assert-RealPath $sourceData
@@ -147,6 +147,15 @@ try {
             throw "Copy verification failed: $name"
         }
     }
+    # The operator profile is separate and never overwritten during an advanced-Pro update.
+    $operatorProfile=Join-Path $installRoot 'operator.config.json'
+    if(-not [IO.File]::Exists($operatorProfile)){
+        $profileSource=Join-Path (Split-Path $sourceConfig -Parent) 'operator.config.json'
+        if(-not [IO.File]::Exists($profileSource)){$profileSource=Join-Path $PSScriptRoot 'operator.config.json'}
+        Assert-RealPath $profileSource
+        Copy-Item -LiteralPath $profileSource -Destination $operatorProfile
+    }
+    Set-Acl -LiteralPath $operatorProfile -AclObject (New-ControlAcl $false)
     $temporary=Join-Path $installRoot 'plan.config.json.tmp'
     [IO.File]::WriteAllBytes($temporary,$configBytes)
     if (Test-Path -LiteralPath $installedConfig) { [IO.File]::Replace($temporary,$installedConfig,[NullString]::Value) }

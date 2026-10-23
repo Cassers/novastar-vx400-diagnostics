@@ -1,4 +1,4 @@
-name: Windows VX400 tests
+name: Windows NovaStar Pro and Users tests
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
@@ -49,6 +49,22 @@ jobs:
       - name: Read-only connection probe against local simulator
         shell: powershell
         run: python .\tests\probe_runtime_tests.py
+      - name: Users engine, deployment and media rules
+        shell: powershell
+        run: |
+          .\tests\Operator.Tests.ps1
+          .\tests\OperatorDeployment.Tests.ps1
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -STA -File .\tests\OperatorMedia.Tests.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Native media rules failed' }
+          python .\tests\operator_runtime_tests.py
+      - name: Users and Pro configurator native interfaces
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: .\tests\OperatorGui.Tests.ps1
+      - name: Interactive user startup registration without execution
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: .\tests\OperatorStartup.Windows.Tests.ps1
       - name: Native Windows interface and screenshots
         if: ${{ !cancelled() }}
         shell: powershell

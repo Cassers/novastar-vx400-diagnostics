@@ -1,4 +1,12 @@
-# Control local NovaStar VX400 / VX600 — v0.7.0
+# Control local NovaStar VX400 / VX600 — Pro y Usuarios v0.8.0
+
+**Pro configura todo; Usuarios opera el perfil guardado.** Extraiga el paquete completo: `Abrir-Control-Pro.bat` abre la interfaz avanzada y `Abrir-Control-Usuarios.bat` la operación diaria. Los paquetes son completos; Usuarios excluye los editores expertos. El hardware admitido sigue siendo VX400/VX600 originales, no la gama VX600 Pro.
+
+Pro → Estado → **Configurar Usuarios** ajusta secado diario, preparación/enfriamiento, niveles, vídeo/NEGRO, salida de Windows y lienzo SCALE. Usuarios solo ofrece PREHEAT, APAGADO, MAIN/PIP1/PIP2/SCALE, estado y soporte. El perfil nuevo empieza sin aceptar y sin salida elegida: no inicia escrituras por defecto. [Configurar y entregar desde Pro](docs/pro-usuarios.md) · [Guía Usuarios](docs/usuarios.md).
+
+Cerrar Usuarios deja motor y reproductor independientes en segundo plano. Su inicio automático se activa desde Pro **al iniciar sesión**, requiere Windows despierto y sesión abierta. El calendario avanzado de Pro sigue usando su motor anterior y perfiles separados: elija un único inicio para cada conexión.
+
+## Funciones avanzadas conservadas
 
 Extraiga el paquete **completo** y abra **`Abrir-Control-NovaStar.bat`**. Seleccione el modelo original y **Ethernet** o **USB** en Estado. **Probar conexión** consulta la identidad sin cambiar brillo ni contenido. USB añade **Buscar USB** y selección de dispositivo usando el driver original NovaStar/libusb0 instalado; NovaLCT no necesita estar abierto.
 

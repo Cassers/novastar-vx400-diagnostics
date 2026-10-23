@@ -3,6 +3,7 @@ Set-StrictMode -Version Latest
 # Immutable SHA256 allowlist of genuine controller versions from this repository's
 # history through 38cd715. Normalize only CRLF to LF (ZIP/git checkout compatibility).
 $script:knownHashes=@{
+    'Watch-VxOperator.ps1'=@()
     'Watch-Vx400Plan.ps1'=@('82424FDE0CC4876168C24AD87A6B13DDC0C60350583BC742879E67CB015245EB','A212C9025445C393EFA8BD433CB05C6CA446F7A389F1FC2FC42E9147EEC386C9','D43BE1033DD6DC0C733A1745163007B899FA98193CCD216183F7890783CD0062','F21B0250C2BC10C0C6B4135DC8185208A89006603A0602715CD1E08BCCED46B0')
     'Watch-Vx400.ps1'=@('250506E7CECC6E13395315E624016C19BC0F50327A80811A0B2FBF030230BAFB','C490789B36A49813687ECA9F27CD1D085CAC3CEB8F0FE7B417538F0A819B3131')
     'Set-Vx400Manual.ps1'=@('22F3D77A82FDE35F86B4B5F1168DEBF2004B8840BF710F061F664A26ADA85F13','F06C9D3BA39403E35D3E6F8C8DAE3B373AD16579FD9C11DBEDED4A16D82CAFF9')
@@ -43,9 +44,10 @@ function ConvertFrom-VxControllerCommandLine {
     if($index -ge $tokens.Count-1){throw 'Missing -File script.'}
     $index++;$scriptPath=$tokens[$index];$index++
     $name=([regex]::Split($scriptPath,'[\\/]'))[-1]
-    if($name -notin @('Watch-Vx400Plan.ps1','Watch-Vx400.ps1','Set-Vx400Manual.ps1')){throw 'Not an owned controller script.'}
-    $switches=@{ 'Watch-Vx400Plan.ps1'=@('-enablecontrol','-manualdry');'Watch-Vx400.ps1'=@('-enablesequence');'Set-Vx400Manual.ps1'=@('-enablecontrol') }
+    if($name -notin @('Watch-Vx400Plan.ps1','Watch-Vx400.ps1','Set-Vx400Manual.ps1','Watch-VxOperator.ps1')){throw 'Not an owned controller script.'}
+    $switches=@{ 'Watch-VxOperator.ps1'=@('-enablecontrol');'Watch-Vx400Plan.ps1'=@('-enablecontrol','-manualdry');'Watch-Vx400.ps1'=@('-enablesequence');'Set-Vx400Manual.ps1'=@('-enablecontrol') }
     $values=@('-configpath','-datadirectory')
+    if($name -eq 'Watch-VxOperator.ps1'){$values+='-operatorconfigpath'}
     if($name -ne 'Set-Vx400Manual.ps1'){$values+='-maxpolls'}else{$values+=@('-brightnesspercent','-display')}
     $parameters=@{}
     while($index -lt $tokens.Count){
@@ -130,7 +132,14 @@ function Get-VxControllerIdentity {
     if((Get-VxEndpointFromConfig $config) -cne $Endpoint){throw 'Different controller endpoint.'}
     if($null -eq $ProcessRecord.CreationDate){throw 'Process creation time unavailable.'}
     if([int]$ProcessRecord.ProcessId -gt 0 -and (Get-Item -LiteralPath $config).LastWriteTimeUtc -gt ([DateTime]$ProcessRecord.CreationDate).ToUniversalTime()){throw 'Controller config changed after startup; the running endpoint is unconfirmed. Inspect the original controller.'}
-    return [pscustomobject]@{processId=[int]$ProcessRecord.ProcessId;scriptPath=$path;configPath=$config;dataDirectory=$data;creationTimeUtc=([DateTime]$ProcessRecord.CreationDate).ToUniversalTime().ToString('o');gracefulSupported=($parsed.scriptName -eq 'Watch-Vx400Plan.ps1');scriptHash=$scriptHash;configHash=(Get-VxOwnershipHash $config);commandLine=[string]$ProcessRecord.CommandLine;executablePath=$exe}
+    $operatorProfile='';$operatorHash=''
+    if($parsed.scriptName -ceq 'Watch-VxOperator.ps1'){
+        $operatorProfile=if($parsed.parameters.ContainsKey('-operatorconfigpath')){[string]$parsed.parameters['-operatorconfigpath']}else{Join-Path $root 'operator.config.json'}
+        $operatorProfile=Resolve-VxOwnershipPath $operatorProfile
+        if([int]$ProcessRecord.ProcessId -gt 0 -and (Get-Item -LiteralPath $operatorProfile).LastWriteTimeUtc -gt ([DateTime]$ProcessRecord.CreationDate).ToUniversalTime()){throw 'Operator profile changed after startup; inspect and stop the original owner.'}
+        $operatorHash=Get-VxOwnershipHash $operatorProfile
+    }
+    return [pscustomobject]@{processId=[int]$ProcessRecord.ProcessId;scriptPath=$path;configPath=$config;operatorConfigPath=$operatorProfile;operatorConfigHash=$operatorHash;dataDirectory=$data;creationTimeUtc=([DateTime]$ProcessRecord.CreationDate).ToUniversalTime().ToString('o');gracefulSupported=($parsed.scriptName -in @('Watch-Vx400Plan.ps1','Watch-VxOperator.ps1'));scriptHash=$scriptHash;configHash=(Get-VxOwnershipHash $config);commandLine=[string]$ProcessRecord.CommandLine;executablePath=$exe}
 }
 function Find-VxControllers {
     [CmdletBinding()]
@@ -149,6 +158,7 @@ function Test-VxOwnedControllerTask {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Task,[Parameter(Mandatory)][string]$Endpoint,[Parameter(Mandatory)][string]$ExpectedPowerShell)
     try{
+        if($Task.TaskPath -ceq '\' -and $Task.TaskName -cmatch '^NovaStar-Usuarios-[A-F0-9]{16}$'){return (Test-VxOwnedOperatorTask $Task $Endpoint $ExpectedPowerShell)}
         if($Task.TaskPath -cne '\' -or $Task.TaskName -notin @('NovaStar-VX400-Control','NovaStar-VX400-Watcher')){return $false}
         $actions=@($Task.Actions);if($actions.Count -ne 1){return $false}
         $root=Join-Path $env:ProgramFiles $Task.TaskName
@@ -163,12 +173,37 @@ function Test-VxOwnedControllerTask {
         return ($identity.scriptPath -ieq (Join-Path $root $name) -and $identity.configPath -ieq (Join-Path $root $config) -and $identity.dataDirectory -ieq $data)
     }catch{return $false}
 }
+
+function Test-VxOwnedOperatorTask($Task,[string]$Endpoint,[string]$ExpectedPowerShell){
+    try{
+        $actions=@($Task.Actions)
+        if($Task.TaskPath -cne '\' -or $Task.TaskName -cnotmatch '^NovaStar-Usuarios-[A-F0-9]{16}$' -or $actions.Count -ne 1 -or $Task.Principal.LogonType -ne 'Interactive'){return $false}
+        $record=[pscustomobject]@{ProcessId=0;CreationDate=[DateTime]::UtcNow;ExecutablePath=$actions[0].Execute;CommandLine=('"'+$actions[0].Execute+'" '+$actions[0].Arguments)}
+        $parsed=ConvertFrom-VxControllerCommandLine $record.CommandLine
+        if($parsed.scriptName -cne 'Watch-VxOperator.ps1' -or -not $parsed.parameters.ContainsKey('-enablecontrol')){return $false}
+        foreach($required in @('-configpath','-operatorconfigpath','-datadirectory')){if(-not $parsed.parameters.ContainsKey($required)){return $false}}
+        $identity=Get-VxControllerIdentity $record $Endpoint $ExpectedPowerShell
+        $operator=Resolve-VxOwnershipPath $parsed.parameters['-operatorconfigpath']
+        $markerPath=Resolve-VxOwnershipPath (Join-Path $identity.dataDirectory 'operator-startup.json')
+        if((Get-Item -LiteralPath $markerPath).Length -gt 32768){return $false}
+        $marker=Get-Content -LiteralPath $markerPath -Raw -Encoding UTF8|ConvertFrom-Json
+        $principalSid=if([string]$Task.Principal.UserId -match '^S-1-\d+(?:-\d+)+$'){[string]$Task.Principal.UserId}else{(New-Object Security.Principal.NTAccount([string]$Task.Principal.UserId)).Translate([Security.Principal.SecurityIdentifier]).Value}
+        if($marker.schemaVersion -ne 1 -or $marker.application -cne 'NovaStar-Usuarios' -or $marker.taskName -cne $Task.TaskName -or $marker.userSid -cne $principalSid){return $false}
+        if($marker.configPath -ine $identity.configPath -or $marker.operatorConfigPath -ine $operator -or $marker.dataDirectory -ine $identity.dataDirectory){return $false}
+        if($marker.scriptRoot -ine (Split-Path $identity.scriptPath -Parent) -or $actions[0].WorkingDirectory -ine $marker.scriptRoot){return $false}
+        $sha=[Security.Cryptography.SHA256]::Create()
+        try{$key=[IO.Path]::GetFullPath($identity.dataDirectory).TrimEnd('\','/').ToUpperInvariant();$hash=[BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($key))).Replace('-','').Substring(0,16)}finally{$sha.Dispose()}
+        return ($Task.TaskName -ceq ('NovaStar-Usuarios-'+$hash))
+    }catch{return $false}
+}
+
 function Assert-VxControllerStillSame($Identity,$HeldProcess,[string]$Endpoint,[string]$ExpectedPowerShell){
     if($HeldProcess.HasExited){return $false}
     $record=Get-CimInstance -ClassName Win32_Process -Filter ('ProcessId = '+$Identity.processId) -ErrorAction Stop
     if($null -eq $record){return $false}
     $now=Get-VxControllerIdentity $record $Endpoint $ExpectedPowerShell
     foreach($field in @('creationTimeUtc','commandLine','scriptHash','configHash','executablePath','scriptPath','configPath','dataDirectory')){if($now.$field -cne $Identity.$field){throw 'Controller identity changed. Abort and scan again.'}}
+    if($now.operatorConfigPath){foreach($field in @('operatorConfigPath','operatorConfigHash')){if($now.$field -cne $Identity.$field){throw 'Operator profile identity changed; scan again.'}}}
     if([Math]::Abs(($HeldProcess.StartTime.ToUniversalTime()-[DateTime]$record.CreationDate.ToUniversalTime()).TotalMilliseconds) -gt 2){throw 'PID creation time does not match held process.'}
     return $true
 }
@@ -219,7 +254,9 @@ function Invoke-VxOwnershipRecovery {
             foreach($identity in $controllers){
                 $match=@($snapshot.controllers|Where-Object{$_.processId -eq $identity.processId})
                 if($match.Count -ne 1){$same=$false;break}
-                foreach($field in @('creationTimeUtc','commandLine','scriptHash','configHash','executablePath','scriptPath','configPath','dataDirectory')){
+                $fields=@('creationTimeUtc','commandLine','scriptHash','configHash','executablePath','scriptPath','configPath','dataDirectory')
+                if($identity.operatorConfigPath){$fields+=@('operatorConfigPath','operatorConfigHash')}
+                foreach($field in $fields){
                     if($field -eq 'creationTimeUtc'){$equal=([DateTime]$match[0].$field -eq [DateTime]$identity.$field)}else{$equal=($match[0].$field -ceq $identity.$field)}
                     if(-not $equal){$same=$false;break}
                 }
@@ -232,7 +269,9 @@ function Invoke-VxOwnershipRecovery {
             $held+=[pscustomobject]@{identity=$identity;process=$process}
             $null=Assert-VxControllerStillSame $identity $process $endpoint $exe
         }
-        foreach($name in @('NovaStar-VX400-Control','NovaStar-VX400-Watcher')){
+        $taskNames=@('NovaStar-VX400-Control','NovaStar-VX400-Watcher')
+        $taskNames+=@(Get-ScheduledTask -TaskName 'NovaStar-Usuarios-*' -TaskPath '\' -ErrorAction SilentlyContinue | ForEach-Object {$_.TaskName})
+        foreach($name in @($taskNames|Select-Object -Unique)){
             $task=Get-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction SilentlyContinue
             if($null -ne $task -and (Test-VxOwnedControllerTask $task $endpoint $exe)){
                 $fresh=Get-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop

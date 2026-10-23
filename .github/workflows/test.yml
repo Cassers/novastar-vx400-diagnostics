@@ -18,6 +18,7 @@ jobs:
       - name: Pro password policy and native access dialogs
         shell: powershell
         run: |
+          .\tests\ProContext.Tests.ps1
           .\tests\ProAccess.Tests.ps1
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -STA -File .\tests\ProAccessGui.Tests.ps1
           if ($LASTEXITCODE -ne 0) { throw 'Pro access dialogs failed' }

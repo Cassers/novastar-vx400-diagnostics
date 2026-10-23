@@ -8,7 +8,11 @@ $explicitConfig = -not [string]::IsNullOrWhiteSpace($ConfigPath)
 $explicitData = -not [string]::IsNullOrWhiteSpace($DataDirectory)
 $installedRoot = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'NovaStar-VX400-Control'
 if (-not $explicitConfig) {
-    if (-not $explicitData -and (Test-Path -LiteralPath (Join-Path $installedRoot 'plan.config.json'))) {
+    # A delivered portable key belongs to this folder, even if an older Pro is installed.
+    # An invalid local policy must fail closed locally instead of selecting another installation.
+    $preferPortable=[IO.File]::Exists((Join-Path $PSScriptRoot 'pro-access.json')) -and
+        ([IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\','/') -ine [IO.Path]::GetFullPath($installedRoot).TrimEnd('\','/'))
+    if (-not $explicitData -and -not $preferPortable -and (Test-Path -LiteralPath (Join-Path $installedRoot 'plan.config.json'))) {
         $ConfigPath=Join-Path $installedRoot 'plan.config.json'
         $DataDirectory=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'NovaStar-VX400-Control'
     } else { $ConfigPath=Join-Path $PSScriptRoot 'plan.config.json' }

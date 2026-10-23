@@ -2,6 +2,10 @@
 
 2026-10-22. Pruebas automatizadas ejecutadas exclusivamente en simuladores; la ejecución física del diagnóstico fue realizada por el operador del sitio, según captura recibida. El nuevo secuenciador no ha enviado escrituras a hardware real.
 
+## Entrega unificada y clave Pro v0.8.1
+
+La nueva entrega combina Usuarios y Pro. Se comprueban el verificador de contraseña, cambio obligatorio inicial, preservación de la clave elegida, exportación completa y accesos nativos en Windows PowerShell 5.1. La evidencia definitiva de CI y sus límites se asocia al commit de la entrega; no se considera validado hardware real por estas pruebas.
+
 ## Ampliación VX600 y USB/Ethernet v0.6.0
 
 - Selección de modelo y transporte; configuraciones anteriores VX400/Ethernet y nuevas VX600/Ethernet.

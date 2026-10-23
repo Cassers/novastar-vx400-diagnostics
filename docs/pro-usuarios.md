@@ -1,6 +1,6 @@
 # Configurar Usuarios desde Pro
 
-Abra **Abrir-Control-Pro.bat**. Pro conserva la interfaz avanzada y añade **Estado → Configurar Usuarios**. Usuarios utiliza `plan.config.json` para la conexión y `operator.config.json` para su perfil diario separado; guardar este último conserva el calendario avanzado.
+Abra **Abrir-Control-Pro.bat** o **Usuarios → Acceso Pro…** e introduzca la clave Pro. La clave temporal exige elegir una nueva de al menos 12 caracteres antes de abrir los ajustes. Puede cambiarla después en **Pro → Estado → Cambiar clave Pro**. Cancelar conserva los archivos y deja Pro cerrado. Pro conserva la interfaz avanzada y añade **Estado → Configurar Usuarios**. Usuarios utiliza `plan.config.json` para la conexión y `operator.config.json` para su perfil diario separado; guardar este último conserva el calendario avanzado.
 
 ## Primera puesta en marcha
 
@@ -14,11 +14,13 @@ Si se deshabilita multimedia expresamente desde Pro, el motor utiliza el patrón
 
 ## Entregar al cliente
 
-En el configurador, **Entrega e inicio → Exportar Usuarios** crea una carpeta completa nueva y vacía con la configuración actual. Excluye editores Pro, comandos pendientes, registros y datos de ejecución. Los medios conservan sus rutas; no se empaquetan automáticamente archivos privados/grandes.
+En el configurador, **Entrega e inicio → Exportar instalación** crea una carpeta completa nueva y vacía con la configuración actual. Incluye Usuarios, Pro y el verificador de la clave configurada para esa instalación. Excluye comandos pendientes, registros y datos de ejecución. Los medios conservan sus rutas; no se empaquetan automáticamente archivos privados/grandes.
 
 Para configurar esa copia posteriormente: **Pro → Estado → Otra instalación Usuarios**, seleccione su carpeta, ajuste conexión y abra Configurar Usuarios en ese contexto. Todos sus ajustes se guardan allí. Conservar una Pro separada no sincroniza automáticamente otra carpeta.
 
-Los ZIP públicos Pro y Usuarios traen valores iniciales desactivados. El paquete Pro incluye ambos lanzadores; se puede operar la misma carpeta con Usuarios y configurarla desde Pro. El paquete Usuarios excluye la interfaz experta y se configura abriéndolo desde una Pro.
+Se entrega un único ZIP con `Abrir-NovaStar.bat` (Usuarios por defecto), ambos lanzadores y los ajustes iniciales sin aceptar. El configurador también pide clave si se abre directamente. La contraseña se entrega por separado; no va en el ZIP ni en el código fuente.
+
+`pro-access.json` se guarda junto al plan de cada instalación y contiene un verificador con sal aleatoria. Pro no abre si falta o está dañado. Copiar una instalación copia su clave; no sincroniza cambios posteriores entre carpetas. La clave limita el acceso desde las interfaces; los scripts editables y archivos portátiles requieren permisos de Windows si se necesita impedir modificaciones por fuera de la app.
 
 ## Inicio automático
 
@@ -30,7 +32,7 @@ Cerrar la GUI deja motor/reproductor activos. Cerrar sesión, dormir o apagar el
 
 ## Actualizar y comprobar
 
-Detenga motores y retire su inicio temporalmente. Conserve `plan.config.json`, `operator.config.json` y `plan-data` completos: el historial diario y las decisiones pendientes evitan repetir una secuencia. Extraiga el paquete completo; no mezcle actualizaciones parciales. Restaure los archivos/datos conservados, valide desde Pro y vuelva a habilitar el inicio elegido.
+Detenga motores y retire su inicio temporalmente. Conserve `plan.config.json`, `operator.config.json`, `pro-access.json` y `plan-data` completos: el historial diario y las decisiones pendientes evitan repetir una secuencia. Extraiga el paquete completo; no mezcle actualizaciones parciales. Restaure los archivos/datos conservados, valide desde Pro y vuelva a habilitar el inicio elegido.
 
 Antes de entregar, pruebe en Windows: reproducción en la salida seleccionada, códec del vídeo, NEGRO, cierre/reapertura, preparación completa, apagado sin aumento de brillo, pérdida de enlace y nueva preparación explícita. Pruebe capas y SCALE sobre el firmware real, por cada transporte utilizado. Las pruebas de simulador no sustituyen estas comprobaciones ni certifican un tratamiento térmico.
 

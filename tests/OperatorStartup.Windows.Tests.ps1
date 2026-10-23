@@ -7,7 +7,10 @@ $root=Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $root 'Vx.Operator.Deployment.psm1') -Force
 Import-Module (Join-Path $root 'Vx400.Ownership.psm1') -Force
 $temp=Join-Path $env:RUNNER_TEMP ('vx-startup-'+[guid]::NewGuid().ToString('N'));$null=[IO.Directory]::CreateDirectory($temp)
-$application=Join-Path $temp 'Usuarios';$null=& (Join-Path $root 'Export-VxUsuarios.ps1') -Destination $application
+$policy=Join-Path $temp 'fixture-policy.json'
+@{schemaVersion=1;kdf='PBKDF2-SHA256';iterations=600000;salt=[Convert]::ToBase64String([byte[]](1..32));hash=[Convert]::ToBase64String([byte[]](33..64));requireChange=$true}|ConvertTo-Json|Set-Content -LiteralPath $policy -Encoding UTF8
+$application=Join-Path $temp 'Unified';$null=& (Join-Path $root 'Export-VxUsuarios.ps1') -Destination $application -AccessPolicyPath $policy
+if((Get-FileHash (Join-Path $application 'pro-access.json')).Hash -cne (Get-FileHash $policy).Hash){throw 'Unified export changed the Pro verifier.'}
 $data=Join-Path $temp 'data';$planPath=Join-Path $temp 'plan.config.json';$profilePath=Join-Path $temp 'operator.config.json'
 $name=Get-VxOperatorTaskName $data
 $plan=Get-Content (Join-Path $root 'plan.config.json') -Raw|ConvertFrom-Json

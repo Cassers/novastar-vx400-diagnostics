@@ -6,3 +6,6 @@ hardware*.txt
 *.log
 __pycache__/
 *.zip
+
+# Per-delivery verifier; credentials are provisioned privately outside source control.
+pro-access.json

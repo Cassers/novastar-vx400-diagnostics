@@ -1,6 +1,6 @@
 ﻿#requires -Version 5.1
 [CmdletBinding()]
-param([string]$ConfigPath='', [string]$OperatorConfigPath='', [string]$DataDirectory='', [switch]$SmokeTest, [string]$ScreenshotPath='')
+param([string]$ConfigPath='', [string]$OperatorConfigPath='', [string]$DataDirectory='', [switch]$SmokeTest, [string]$ScreenshotPath='', [switch]$Modal)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 if($env:OS -ne 'Windows_NT'){throw 'Esta aplicación requiere Windows PowerShell 5.1 y Windows Forms.'}
@@ -9,6 +9,17 @@ if(-not $ConfigPath){$ConfigPath=Join-Path $PSScriptRoot 'plan.config.json'}
 if(-not $OperatorConfigPath){$OperatorConfigPath=Join-Path (Split-Path $ConfigPath -Parent) 'operator.config.json'}
 if(-not $DataDirectory){$DataDirectory=Join-Path $PSScriptRoot 'plan-data'}
 $ConfigPath=[IO.Path]::GetFullPath($ConfigPath);$OperatorConfigPath=[IO.Path]::GetFullPath($OperatorConfigPath);$DataDirectory=[IO.Path]::GetFullPath($DataDirectory)
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+Import-Module (Join-Path $PSScriptRoot 'Vx.ProAccess.psm1')
+$script:proAccessPath=Join-Path (Split-Path $ConfigPath -Parent) 'pro-access.json'
+if(-not $SmokeTest){
+    try{$null=Read-VxProAccessPolicy -Path $script:proAccessPath}catch{
+        $null=[Windows.Forms.MessageBox]::Show('No se puede abrir Pro. Conserve o restaure pro-access.json de esta instalación. '+$_.Exception.Message,'Acceso Pro','OK','Error')
+        return
+    }
+    if(-not (Request-VxProAccess -Path $script:proAccessPath)){return}
+}
 Import-Module (Join-Path $PSScriptRoot 'Vx400.Schedule.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Vx.Connection.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Vx.Operator.psm1') -Force
@@ -60,6 +71,7 @@ function Assert-OperatorScreen($Candidate){
     if($screen[0].Primary -and -not $Candidate.allowPrimaryScreen){throw 'La salida seleccionada es principal. Debe aceptar expresamente su uso.'}
 }
 function Save-OperatorConfiguration {
+    if(-not $SmokeTest -and -not (Request-VxProAccess -Path $script:proAccessPath -Owner $script:form)){throw 'Acceso Pro cancelado.'}
     # Hold the same storage lock as every engine throughout validation and replacement.
     $candidate=Get-EditedOperatorConfig
     if(-not $candidate.configured){throw 'Marque la aceptación explícita antes de guardar.'}
@@ -133,7 +145,7 @@ $t=New-ConfigPage 'Entrega e inicio'
 $l=New-ConfigLabel ('Instalación configurada: '+(Split-Path $ConfigPath -Parent)+[Environment]::NewLine+'Usuarios comparte este perfil y plan-data. Exportar crea una copia completa nueva; los medios conservan sus rutas y deben existir en el PC de destino. Para editar una copia, abra Pro → Otra instalación Usuarios. El inicio de Usuarios se ejecuta al iniciar sesión, con Windows activo y sesión abierta. Desactive el inicio avanzado Pro para esta conexión antes de activar Usuarios.')
 $l.MaximumSize=New-Object Drawing.Size(850,0);$r=$t.RowCount;$t.RowCount++;$t.Controls.Add($l,0,$r);$t.SetColumnSpan($l,2)
 $deploymentButtons=New-Object Windows.Forms.FlowLayoutPanel;$deploymentButtons.AutoSize=$true;$deploymentButtons.Dock='Top'
-foreach($entry in @(@('Exportar Usuarios…','export'),@('Activar al iniciar sesión','install'),@('Quitar inicio Usuarios','remove'))){
+foreach($entry in @(@('Exportar instalación…','export'),@('Activar al iniciar sesión','install'),@('Quitar inicio Usuarios','remove'))){
     $b=New-Object Windows.Forms.Button;$b.Text=$entry[0];$b.Tag=$entry[1];$b.AutoSize=$true;$b.Height=36
     $b.Add_Click({param($sender,$e)try{Start-OperatorDeployment ([string]$sender.Tag)}catch{$script:notice.Text=$_.Exception.Message}})
     $deploymentButtons.Controls.Add($b)
@@ -146,7 +158,7 @@ function Start-OperatorDeployment([string]$Action){
     if($Action -ne 'remove'){Save-OperatorConfiguration}
     $target='';$entry='Install-VxUsuariosStartup.ps1'
     if($Action -eq 'export'){
-        $dialog=New-Object Windows.Forms.FolderBrowserDialog;$dialog.Description='Cree o seleccione una carpeta nueva vacía para Usuarios.';$dialog.ShowNewFolderButton=$true
+        $dialog=New-Object Windows.Forms.FolderBrowserDialog;$dialog.Description='Cree o seleccione una carpeta nueva vacía para la instalación unificada.';$dialog.ShowNewFolderButton=$true
         try{if($dialog.ShowDialog() -ne 'OK'){return};$target=$dialog.SelectedPath}finally{$dialog.Dispose()}
         $entry='Export-VxUsuarios.ps1'
     }
@@ -218,5 +230,5 @@ function Invoke-ConfigSmoke {
     Write-Output 'PASS Operator configurator smoke (temporary fixtures; no engine launched).'
 }
 try{
-    if($SmokeTest){$script:form.Show();[Windows.Forms.Application]::DoEvents();Invoke-ConfigSmoke;$script:form.Close()}else{[Windows.Forms.Application]::Run($script:form)}
+    if($SmokeTest){$script:form.Show();[Windows.Forms.Application]::DoEvents();Invoke-ConfigSmoke;$script:form.Close()}elseif($Modal){$null=$script:form.ShowDialog()}else{[Windows.Forms.Application]::Run($script:form)}
 }finally{$deploymentTimer.Stop();$deploymentTimer.Dispose();if($null -ne $script:deploymentProcess){$script:deploymentProcess.Dispose()};$script:form.Dispose();if($script:fixture -and [IO.Directory]::Exists($script:fixture)){Remove-Item -LiteralPath $script:fixture -Recurse -Force}}

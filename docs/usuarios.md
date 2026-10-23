@@ -1,6 +1,6 @@
 # Operar la pantalla con Usuarios
 
-Extraiga la carpeta completa y abra **Abrir-Control-Usuarios.bat**. El perfil debe estar configurado y aceptado previamente desde Pro. Usuarios no ofrece ajustes de conexión, brillo, horarios ni tiempos.
+Extraiga la carpeta completa y abra **Abrir-NovaStar.bat** (también sirve **Abrir-Control-Usuarios.bat**). El perfil debe estar configurado y aceptado previamente desde Pro. Usuarios no ofrece ajustes de conexión, brillo, horarios ni tiempos.
 
 ## Operación diaria
 
@@ -18,3 +18,7 @@ Cerrar la ventana deja motor y reproductor en segundo plano. Abrir Usuarios vuel
 Una interrupción descarta el progreso: al recuperar la conexión no continúa sola la preparación. Soporte permite solicitar parada de nuestros motores identificados; Windows puede pedir permisos. Si muestra propietarios pendientes, revise sus PID y rutas antes de **Forzar cierre revisado**. Después cierre/abra Usuarios y solicite una preparación nueva. No se cierran NovaLCT, PowerShell ajenos ni clientes de otros computadores.
 
 Los niveles son consignas confirmadas por protocolo, no mediciones ópticas ni certificación de eliminación de humedad. BLACK/apagado de vídeo no corta la alimentación eléctrica. La edición portátil simplifica los mandos ofrecidos; no constituye una barrera de seguridad frente a la edición de archivos o controles externos.
+
+## Acceso Pro
+
+**Acceso Pro…** abre la configuración avanzada y pide la clave del responsable. Usuarios sigue disponible sin contraseña. La primera clave temporal exige cambiarla antes de abrir Pro. Abrir Pro no detiene ni reinicia el motor; para guardar conexión o perfil, el responsable debe solicitar parada y esperar su confirmación.

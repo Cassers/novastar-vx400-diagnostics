@@ -28,6 +28,14 @@ $script:state=$null;$script:pendingId='';$script:pendingSession='';$script:recov
 $script:plan=$null;$script:profile=$null;$script:configurationIssue=''
 try{$script:plan=Read-VxPlanConfig -Path $ConfigPath;$script:profile=Read-VxOperatorConfig -Path $OperatorConfigPath}catch{$script:configurationIssue=$_.Exception.Message}
 function Get-UiProperty($Object,[string]$Name,$Default=''){if($null -ne $Object -and $null -ne $Object.PSObject.Properties[$Name]){return $Object.$Name};return $Default}
+function Open-UiPro {
+    if($SmokeTest){throw 'Pro no se abre durante SmokeTest.'}
+    $proScript=Join-Path $PSScriptRoot 'Control-Vx400.ps1'
+    if(-not [IO.File]::Exists($proScript)){throw 'Extraiga el paquete unificado completo para abrir Pro.'}
+    $arguments='-NoProfile -STA -ExecutionPolicy RemoteSigned -File '+(Quote-UiArgument $proScript)+' -ConfigPath '+(Quote-UiArgument $ConfigPath)+' -DataDirectory '+(Quote-UiArgument $DataDirectory)
+    $null=Start-Process -FilePath (Get-UiPowerShell) -ArgumentList $arguments -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
+    $script:notice.Text='Acceso Pro abierto: introduzca la clave en su ventana. El motor conserva su estado.'
+}
 function Get-UiPowerShell {return Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'}
 function Quote-UiArgument([string]$Value){if($Value.Contains('"')){throw 'Ruta no válida: contiene comillas.'};return '"'+$Value+'"'}
 function Read-UiJson([string]$Name){$path=Join-Path $DataDirectory $Name;if(-not [IO.File]::Exists($path)){return $null};if((Get-Item -LiteralPath $path).Length -gt 65536){throw 'Archivo de estado demasiado grande.'};return (Read-VxSharedText -Path $path|ConvertFrom-Json)}
@@ -187,6 +195,8 @@ foreach($name in @('Main','PIP1','PIP2')){
     $script:layerButtons[$name]=$button;$flow.Controls.Add($button)
 }
 $script:scale=New-UiButton 'SCALE' {Send-UiCommand 'scale'};$flow.Controls.Add($script:scale);Add-UiRow $flow
+$flow=New-UiFlow
+$script:accessPro=New-UiButton 'Acceso Pro…' {Open-UiPro};$flow.Controls.Add($script:accessPro);Add-UiRow $flow
 Add-UiRow (New-UiLabel 'Soporte · detener / recuperar solo controladores identificados')
 $flow=New-UiFlow
 $script:recover=New-UiButton 'Solicitar parada propia' {Start-UiRecovery};$flow.Controls.Add($script:recover)
@@ -245,6 +255,7 @@ function Invoke-OperatorSmoke {
     if((Get-FileHash -LiteralPath (Join-Path $DataDirectory 'operator-command.json')).Hash -ne $before){throw 'Smoke: APAGADO OFF wrote a command.'}
     $rejected=$false;try{Start-UiEngine}catch{$rejected=$true};if(-not $rejected){throw 'Smoke: engine launched.'}
     $rejected=$false;try{Start-UiRecovery}catch{$rejected=$true};if(-not $rejected){throw 'Smoke: recovery launched.'}
+    $rejected=$false;try{Open-UiPro}catch{$rejected=$true};if(-not $rejected -or $script:accessPro.Text -cne 'Acceso Pro…'){throw 'Smoke: Pro launcher bypassed fixture gate.'}
     $script:notice.Text='Smoke PASS: typed commands, fresh owner, pending, mode gates. Temporary fixtures; no motor or playback.'
     if($ScreenshotPath){$null=[IO.Directory]::CreateDirectory($ScreenshotPath);[Windows.Forms.Application]::DoEvents();$bitmap=New-Object Drawing.Bitmap($script:form.Width,$script:form.Height);try{$script:form.DrawToBitmap($bitmap,(New-Object Drawing.Rectangle(0,0,$bitmap.Width,$bitmap.Height)));$bitmap.Save((Join-Path $ScreenshotPath 'usuarios.png'),[Drawing.Imaging.ImageFormat]::Png)}finally{$bitmap.Dispose()}}
     Write-Output 'PASS Operator user GUI smoke (temporary fixtures; no engine launched).'

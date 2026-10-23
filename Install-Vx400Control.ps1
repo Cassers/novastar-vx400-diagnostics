@@ -106,7 +106,9 @@ try {
         Assert-OwnedControlDirectory $installRoot $dataRoot
     }
     $sourceConfig=[IO.Path]::GetFullPath($ConfigPath)
-    $names=@('Watch-Vx400Plan.ps1','Vx400.Schedule.psm1','Vx400.Protocol.psm1','Vx.Connection.psm1','Vx.Usb.psm1','Vx.Usb.Native.cs','Test-VxConnection.ps1','Abrir-Control-NovaStar.bat','Control-Vx400.ps1','Set-Vx400Manual.ps1','Invoke-VxLayer.ps1','Vx.Layers.psm1','Recover-Vx400.ps1','Vx400.Ownership.psm1','Abrir-Control-VX400.bat','Install-Vx400Control.ps1','Abrir-Control-Pro.bat','Abrir-Control-Usuarios.bat','Control-VxUsuarios.ps1','Configurar-VxUsuarios.ps1','Vx.Operator.psm1','Watch-VxOperator.ps1','Play-VxOperatorMedia.ps1','Vx.Operator.Media.cs','Recover-VxOperatorUi.ps1','Vx.Operator.Deployment.psm1','Export-VxUsuarios.ps1','Install-VxUsuariosStartup.ps1')
+    Import-Module (Join-Path $PSScriptRoot 'Vx.Operator.Deployment.psm1') -Force
+    Import-Module (Join-Path $PSScriptRoot 'Vx.ProAccess.psm1') -Force
+    $names=@(Get-VxUserPackageFiles)
     foreach ($name in $names) {
         $path=Join-Path $PSScriptRoot $name
         Assert-RealPath $path
@@ -119,6 +121,19 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Invalid configuration; installation unchanged.' }
     # Capture the validated data before a source==destination update, never a partial rewrite.
     $configBytes=[IO.File]::ReadAllBytes($sourceConfig)
+    # Preserve the installed verifier even when updating from another installation.
+    # A source checkout without a verifier can install runtime; Pro remains locked.
+    $installedPolicy=Join-Path $installRoot 'pro-access.json'
+    Assert-RealPath $installedPolicy
+    $policyBytes=$null
+    if (-not [IO.File]::Exists($installedPolicy)) {
+        $sourcePolicy=Join-Path (Split-Path $sourceConfig -Parent) 'pro-access.json'
+        Assert-RealPath $sourcePolicy
+        if ([IO.File]::Exists($sourcePolicy)) {
+            $null=Read-VxProAccessPolicy -Path $sourcePolicy
+            $policyBytes=[IO.File]::ReadAllBytes($sourcePolicy)
+        }
+    }
     if ($task) { Stop-ControlTask $taskName $dataRoot }
     else {
         New-ControlDirectory $installRoot; New-ControlDirectory $dataRoot
@@ -147,6 +162,12 @@ try {
             throw "Copy verification failed: $name"
         }
     }
+    if ($null -ne $policyBytes -and -not [IO.File]::Exists($installedPolicy)) {
+        # CreateNew makes preservation hold even if a policy appeared during the update.
+        $stream=[IO.File]::Open($installedPolicy,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        try {$stream.Write($policyBytes,0,$policyBytes.Length)} finally {$stream.Dispose()}
+    }
+    if ([IO.File]::Exists($installedPolicy)) { Set-Acl -LiteralPath $installedPolicy -AclObject (New-ControlAcl $false) }
     # The operator profile is separate and never overwritten during an advanced-Pro update.
     $operatorProfile=Join-Path $installRoot 'operator.config.json'
     if(-not [IO.File]::Exists($operatorProfile)){

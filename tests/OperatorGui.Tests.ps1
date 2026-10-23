@@ -8,7 +8,7 @@ $root=Split-Path $PSScriptRoot -Parent
 if(-not $OutputDirectory){$temporaryRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()};$OutputDirectory=Join-Path $temporaryRoot 'vx-operator-gui'}
 $OutputDirectory=[IO.Path]::GetFullPath($OutputDirectory);$null=[IO.Directory]::CreateDirectory($OutputDirectory)
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('vx-user-gui-test-'+[guid]::NewGuid().ToString('N'));$null=[IO.Directory]::CreateDirectory($fixture)
-$files=@('Control-VxUsuarios.ps1','Configurar-VxUsuarios.ps1','Vx.Operator.psm1','Vx400.Schedule.psm1','Vx400.Ownership.psm1','Vx.Connection.psm1','Vx400.Protocol.psm1','Play-VxOperatorMedia.ps1','plan.config.json','operator.config.json')
+$files=@('Vx.ProAccess.psm1','Control-VxUsuarios.ps1','Configurar-VxUsuarios.ps1','Vx.Operator.psm1','Vx400.Schedule.psm1','Vx400.Ownership.psm1','Vx.Connection.psm1','Vx400.Protocol.psm1','Play-VxOperatorMedia.ps1','plan.config.json','operator.config.json')
 $hashes=@{}
 try{
     foreach($name in $files){$hashes[$name]=(Get-FileHash -LiteralPath (Join-Path $root $name) -Algorithm SHA256).Hash;Copy-Item -LiteralPath (Join-Path $root $name) -Destination (Join-Path $fixture $name)}

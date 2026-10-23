@@ -1,6 +1,6 @@
-# Ediciones Pro y Usuarios — especificación v0.8
+# Ediciones Pro y Usuarios — especificación v0.8.1
 
-Estado: implementación. Petición de Sergio: conservar Pro completa; configurar TODO desde Pro y ejecutar la operación diaria en Usuarios. No son modelos VX600 Pro: el hardware sigue siendo VX600 original/VX400 existente.
+Estado: v0.8 implementada; ampliación v0.8.1 unifica la entrega y añade clave Pro. Petición de Sergio: conservar Pro completa; configurar TODO desde Pro y ejecutar la operación diaria en Usuarios. No son modelos VX600 Pro: el hardware sigue siendo VX600 original/VX400 existente.
 
 ## Evidencia y alcance
 
@@ -9,7 +9,7 @@ Audios de 22/23 octubre y diagrama del cliente revisados localmente. Datos priva
 ## Requisitos
 
 R1 Pro conserva todas las pestañas actuales y abre Configurar Usuarios. Un archivo separado operator.config.json define el perfil de Usuarios y referencia la conexión plan.config.json existente; no altera el calendario avanzado al guardar.
-R2 Usuarios no muestra editores de brillo, fases, conexión ni horarios. Dos lanzadores y dos paquetes completos, Pro/Usuarios. Esto limita los controles ofrecidos; la copia portátil no constituye autenticación frente a quien edite scripts/configuración. No afirmar bloqueo físico de perilla ni acceso externo.
+R2 Usuarios no muestra editores de brillo, fases, conexión ni horarios. Un paquete completo único; entrada por defecto Usuarios, acceso Pro autenticado y configurador directo protegido. Clave temporal generada fuera de Git, cambio obligatorio al primer acceso, cambio posterior desde Pro. Verificador PBKDF2-HMAC-SHA256600000/sal32/hash32 en pro-access.json, sin contraseña en código/CLI/ZIP. Política ausente o inválida falla cerrado. Exportar conserva el verificador de la instalación elegida; actualizar conserva la clave existente. Motores/tareas no requieren login. La copia portátil no constituye autenticación frente a quien edite scripts/configuración. No afirmar bloqueo físico de perilla ni acceso externo.
 R3 Pro configura horas de mañana, rampas, duraciones de preparación/enfriamiento, topes, carpeta/archivos multimedia, salida de Windows y dimensiones SCALE. Defaults provisionales:04:00–06:00/30%,idle10%,preheat25%/240min,cooldown36min. Salida sin seleccionar y configuración sin aceptar: no iniciar escrituras por defecto. Validar valores, horarios y coherencia; no inventar curva certificada.
 R4 El motor Usuarios conserva mutex por endpoint y watcher.lock de las otras ediciones, identidad, checksum/ACK, frescura tras pausas y fallo cerrado. Solo un motor controla equipo. Conexión perdida/cambio modelo/pausa detiene avance, intenta negro/cero únicamente con identidad confiable, deja decisión pendiente y no reanuda secuencia sola. Solo nueva orden explícita de preparación reinicia el perfil completo.
 R5 Día normal: a inicio diario si no hay preparación activa ejecuta DRY; termina antes del fin configurado y vuelve BLACK. No secado vespertino. No inicia tarde saltándose fases; no reinicia progreso tras cerrar/reabrir/reiniciar. Cambios de calendario/reloj no duplican ciclo diario. Precalentamiento y apagado no pueden coexistir. Apagado tiene prioridad; secado bloqueado durante preparación/enfriamiento y no se reejecuta al acabar si ya fue consumido.

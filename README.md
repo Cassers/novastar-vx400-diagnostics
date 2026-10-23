@@ -1,6 +1,8 @@
-# Control local NovaStar VX400 / VX600 — Pro y Usuarios v0.8.0
+# Control local NovaStar VX400 / VX600 — Pro y Usuarios v0.8.1
 
-**Pro configura todo; Usuarios opera el perfil guardado.** Extraiga el paquete completo: `Abrir-Control-Pro.bat` abre la interfaz avanzada y `Abrir-Control-Usuarios.bat` la operación diaria. Los paquetes son completos; Usuarios excluye los editores expertos. El hardware admitido sigue siendo VX400/VX600 originales, no la gama VX600 Pro.
+**Un solo ZIP: Usuarios abre sin clave y Pro requiere contraseña.** Extraiga la carpeta completa y abra `Abrir-NovaStar.bat` para la operación diaria. Entre por **Acceso Pro…** o `Abrir-Control-Pro.bat` para configurar. La clave temporal se entrega por separado y debe cambiarse al primer acceso; después puede cambiarla en **Pro → Estado → Cambiar clave Pro**. El hardware admitido sigue siendo VX400/VX600 originales, no la gama VX600 Pro.
+
+La clave protege la interfaz avanzada y el configurador directo. Se conserva únicamente un verificador PBKDF2-HMAC-SHA256 con sal aleatoria en `pro-access.json`, junto a `plan.config.json`; no se guarda la contraseña. Si falta o es inválido, Pro permanece cerrado. Como el paquete contiene scripts editables, esta barrera de interfaz necesita permisos de Windows para resistir modificaciones externas. Conserve ese archivo al actualizar; el ZIP no cambia la clave de instalaciones existentes. Motores y tareas en segundo plano no necesitan iniciar sesión en Pro.
 
 Pro → Estado → **Configurar Usuarios** ajusta secado diario, preparación/enfriamiento, niveles, vídeo/NEGRO, salida de Windows y lienzo SCALE. Usuarios solo ofrece PREHEAT, APAGADO, MAIN/PIP1/PIP2/SCALE, estado y soporte. El perfil nuevo empieza sin aceptar y sin salida elegida: no inicia escrituras por defecto. [Configurar y entregar desde Pro](docs/pro-usuarios.md) · [Guía Usuarios](docs/usuarios.md).
 
@@ -8,7 +10,7 @@ Cerrar Usuarios deja motor y reproductor independientes en segundo plano. Su ini
 
 ## Funciones avanzadas conservadas
 
-Extraiga el paquete **completo** y abra **`Abrir-Control-NovaStar.bat`**. Seleccione el modelo original y **Ethernet** o **USB** en Estado. **Probar conexión** consulta la identidad sin cambiar brillo ni contenido. USB añade **Buscar USB** y selección de dispositivo usando el driver original NovaStar/libusb0 instalado; NovaLCT no necesita estar abierto.
+Para ajustar conexión, abra **`Abrir-Control-Pro.bat`**, autentíquese y conserve el paquete **completo**. Seleccione el modelo original y **Ethernet** o **USB** en Estado. **Probar conexión** consulta la identidad sin cambiar brillo ni contenido. USB añade **Buscar USB** y selección de dispositivo usando el driver original NovaStar/libusb0 instalado; NovaLCT no necesita estar abierto.
 
 Nueva configuración: VX600/Ethernet. Las configuraciones anteriores se conservan como VX400/Ethernet. Detenga el motor antes de cambiar de conexión. Modelos Pro no incluidos. No hay cambio automático de transporte. La primera prueba física de cada enlace se hace en el equipo del cliente.
 

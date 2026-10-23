@@ -37,6 +37,16 @@ if(-not $SmokeTest -and $ConfigPath.StartsWith($installedRoot+[IO.Path]::Directo
         }
     }
 }
+# Auth applies to every Pro launcher; unattended engines never load this module.
+Import-Module (Join-Path $PSScriptRoot 'Vx.ProAccess.psm1')
+$script:proAccessPath=Join-Path (Split-Path $ConfigPath -Parent) 'pro-access.json'
+if(-not $SmokeTest){
+    try{$null=Read-VxProAccessPolicy -Path $script:proAccessPath}catch{
+        $null=[Windows.Forms.MessageBox]::Show('No se puede abrir Pro. Conserve o restaure pro-access.json de esta instalación. '+$_.Exception.Message,'Acceso Pro','OK','Error')
+        return
+    }
+    if(-not (Request-VxProAccess -Path $script:proAccessPath)){return}
+}
 Import-Module (Join-Path $PSScriptRoot 'Vx400.Schedule.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Vx.Connection.psm1') -Force
 try { $script:config=Read-VxPlanConfig -Path $ConfigPath }
@@ -273,6 +283,7 @@ function Test-Running {
     return ($script:stateRecent -and [string](Get-Property $script:state state) -ne 'STOPPED')
 }
 function Save-Configuration {
+    if(-not $script:smoke -and -not (Request-VxProAccess -Path $script:proAccessPath -Owner $script:form)){throw 'Acceso Pro cancelado.'}
     if($null -ne $script:layerProcess){throw 'Espere a que termine la consulta o mando de capas.'}
     if($null -ne $script:recoveryProcess -or $null -ne $script:connectionProcess){throw 'Espere a que termine la recuperacion o prueba de conexion.'}
     if(-not $script:smoke -and (Test-Running)){throw 'Pulse Detener y espere la confirmación antes de guardar cambios. La configuración anterior sigue activa.'}
@@ -307,6 +318,12 @@ function Open-OperatorEdition([string]$ScriptName,[switch]$OtherInstallation){
     if($ScriptName -ceq 'Control-VxUsuarios.ps1'){
         $targetScript=Join-Path (Split-Path $targetConfig -Parent) 'Control-VxUsuarios.ps1'
         if(-not [IO.File]::Exists($targetScript)){throw 'La instalación Usuarios elegida está incompleta. Extraiga o exporte su paquete completo.'}
+    }
+    if($ScriptName -ceq 'Configurar-VxUsuarios.ps1'){
+        # A separate script scope retains the authenticated module session without CLI tokens.
+        & $targetScript -ConfigPath $targetConfig -DataDirectory $targetData -Modal
+        Set-Notice 'Configurador cerrado. Los ajustes de Usuarios se guardan en operator.config.json.'
+        return
     }
     foreach($path in @($targetScript,$targetConfig,$targetData)){if($path.Contains('"')){throw 'Ruta no válida.'}}
     $arguments='-NoProfile -STA -ExecutionPolicy RemoteSigned -File "{0}" -ConfigPath "{1}" -DataDirectory "{2}"' -f $targetScript,$targetConfig,$targetData
@@ -345,6 +362,9 @@ function Set-GuiMutex([string]$Directory) {
 function Use-InstalledContext {
     $nextConfig=Join-Path $installedRoot 'plan.config.json'
     $nextData=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'NovaStar-VX400-Control'
+    $nextAccess=Join-Path (Split-Path $nextConfig -Parent) 'pro-access.json'
+    if(-not $script:smoke -and -not (Request-VxProAccess -Path $nextAccess -Owner $script:form)){throw 'La instalación está guardada. Abra Pro y autentíquese para usarla.'}
+    $script:proAccessPath=$nextAccess
     $loaded=Read-VxPlanConfig -Path $nextConfig
     if($script:dataDirectory -ne $nextData){Set-GuiMutex $nextData}
     $script:configPath=$nextConfig;$script:dataDirectory=$nextData;$script:config=$loaded
@@ -781,7 +801,7 @@ function Update-LayerResult {
 }
 
 function Update-ConnectionLabels {
-    $script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.0'
+    $script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.1'
     $script:headerTitle.Text=$script:config.deviceModel+'  /  Control local'
     $destination=if($script:config.connectionType -eq 'USB'){'USB · '+$(if($script:config.usbDeviceKey){$script:config.usbDeviceKey}else{'selección automática'})}else{'Ethernet · '+$script:config.deviceAddress+':'+$script:config.tcpPort}
     $script:endpoint.Text=$destination+'  ·  '+$script:config.timeZone
@@ -843,7 +863,7 @@ function Update-ConnectionProbe {
 
 
 $script:form=New-Object Windows.Forms.Form
-$script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.0'
+$script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.1'
 $script:form.ClientSize=New-Object Drawing.Size(1200,860)
 $script:form.MinimumSize=New-Object Drawing.Size(1050,700)
 $script:form.StartPosition='CenterScreen';$script:form.BackColor=$script:background
@@ -862,7 +882,7 @@ $script:tabs=New-Object Windows.Forms.TabControl;$script:tabs.Dock='Fill';$scrip
 $script:form.Controls.Add($script:tabs);$script:form.Controls.Add($footer);$script:form.Controls.Add($header)
 
 $statePage=New-Page 'Estado';$statePage.AutoScroll=$true;$stateStack=New-Stack $statePage 6
-$stateStack.Dock='Top';$stateStack.Height=890
+$stateStack.Dock='Top';$stateStack.Height=930
 $actions=New-Flow
 $monitor=New-Button 'Iniciar monitor' $true;$monitor.Add_Click({Invoke-UiAction {Start-Controller $false}});$actions.Controls.Add($monitor)
 $control=New-Button 'Iniciar control';$control.Add_Click({Invoke-UiAction {Start-Controller $true}});$actions.Controls.Add($control)
@@ -872,7 +892,8 @@ $remove=New-Button 'Quitar inicio automático';$remove.Add_Click({Invoke-UiActio
 $operatorConfig=New-Button 'Configurar Usuarios';$operatorConfig.Add_Click({Invoke-UiAction {Open-OperatorEdition 'Configurar-VxUsuarios.ps1'}});$actions.Controls.Add($operatorConfig)
 $operatorOpen=New-Button 'Abrir Usuarios';$operatorOpen.Add_Click({Invoke-UiAction {Open-OperatorEdition 'Control-VxUsuarios.ps1'}});$actions.Controls.Add($operatorOpen)
 $operatorOther=New-Button 'Otra instalación Usuarios…';$operatorOther.Add_Click({Invoke-UiAction {Open-OperatorEdition 'Control-Vx400.ps1' -OtherInstallation}});$actions.Controls.Add($operatorOther)
-Add-StackRow $stateStack $actions 0 105
+$changeKey=New-Button 'Cambiar clave Pro';$changeKey.Add_Click({Invoke-UiAction {if($script:smoke){throw 'Cambio de clave deshabilitado en SmokeTest.'};if(Request-VxProPasswordChange -Path $script:proAccessPath -Owner $script:form){Set-Notice 'Clave Pro actualizada para esta instalación.'}}});$actions.Controls.Add($changeKey)
+Add-StackRow $stateStack $actions 0 145
 $cards=New-Object Windows.Forms.TableLayoutPanel;$cards.ColumnCount=4;$cards.RowCount=1
 foreach($cardIndex in 0..3){$null=$cards.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::Percent,25)))}
 $cardTitles=@('COMUNICACIÓN','ESTADO / FASE','BRILLO SOLICITADO','TIEMPO RESTANTE')

@@ -9,7 +9,16 @@ function Get-VxOperatorTaskName([string]$DataDirectory) {
     } finally {$sha.Dispose()}
 }
 function Get-VxUserPackageFiles {
-    return @('Control-VxUsuarios.ps1','Abrir-Control-Usuarios.bat','Watch-VxOperator.ps1','Vx.Operator.psm1','Play-VxOperatorMedia.ps1','Vx.Operator.Media.cs','Vx400.Schedule.psm1','Vx400.Protocol.psm1','Vx.Connection.psm1','Vx.Usb.psm1','Vx.Usb.Native.cs','Vx.Layers.psm1','Recover-VxOperatorUi.ps1','Recover-Vx400.ps1','Vx400.Ownership.psm1','Vx.Operator.Deployment.psm1','Install-VxUsuariosStartup.ps1')
+    # Keep the historical API while deploying one complete Users + Pro runtime.
+    # Config/profile/policy are deliberately copied separately from the selected installation.
+    $files=@(Get-ChildItem -LiteralPath $PSScriptRoot -File | Where-Object {
+        $_.Extension -in @('.ps1','.psm1','.cs','.bat') -or
+        $_.Name -eq 'watcher.config.json' -or $_.Name -like 'appsettings*.json' -or
+        $_.Name -like '*.runtimeconfig.json' -or $_.Name -like '*.deps.json'
+    } | ForEach-Object {$_.Name})
+    # Fail closed when assembling an incomplete checkout rather than omit the Pro gate.
+    $files+=@('Control-Vx400.ps1','Control-VxUsuarios.ps1','Configurar-VxUsuarios.ps1','Vx.ProAccess.psm1','Export-VxUsuarios.ps1','Abrir-NovaStar.bat')
+    return @($files | Sort-Object -Unique)
 }
 function Get-VxPrincipalSid([string]$UserId) {
     if($UserId -match '^S-1-\d+(?:-\d+)+$'){return $UserId}

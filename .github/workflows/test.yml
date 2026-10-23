@@ -15,6 +15,12 @@ jobs:
         run: |
           .\tests\Connection.Tests.ps1
           .\tests\Usb.Tests.ps1
+      - name: Pro password policy and native access dialogs
+        shell: powershell
+        run: |
+          .\tests\ProAccess.Tests.ps1
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -STA -File .\tests\ProAccessGui.Tests.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Pro access dialogs failed' }
       - name: Users engine, deployment and media rules
         shell: powershell
         run: |
@@ -89,4 +95,5 @@ jobs:
           path: |
             ${{ runner.temp }}/vx400-gui
             ${{ runner.temp }}/vx-operator-gui
+            ${{ runner.temp }}/vx-pro-access-gui
           if-no-files-found: ignore

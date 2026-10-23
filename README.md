@@ -1,8 +1,10 @@
-# Control local NovaStar VX400 / VX600 — Pro y Usuarios v0.8.1
+# Control local NovaStar VX400 / VX600 — Pro y Usuarios v0.8.2
 
-**Un solo ZIP: Usuarios abre sin clave y Pro requiere contraseña.** Extraiga la carpeta completa y abra `Abrir-NovaStar.bat` para la operación diaria. Entre por **Acceso Pro…** o `Abrir-Control-Pro.bat` para configurar. La clave temporal se entrega por separado y debe cambiarse al primer acceso; después puede cambiarla en **Pro → Estado → Cambiar clave Pro**. El hardware admitido sigue siendo VX400/VX600 originales, no la gama VX600 Pro.
+**Un solo ZIP: se abre con doble clic; Usuarios abre sin clave y Pro requiere contraseña.** Extraiga la carpeta completa y abra `Abrir-NovaStar.bat` para la operación diaria. Entre por **Acceso Pro…** o `Abrir-Control-Pro.bat` para configurar. La clave temporal se entrega por separado y debe cambiarse al primer acceso; después puede cambiarla en **Pro → Estado → Cambiar clave Pro**. El hardware admitido sigue siendo VX400/VX600 originales, no la gama VX600 Pro.
 
 La clave protege la interfaz avanzada y el configurador directo. Se conserva únicamente un verificador PBKDF2-HMAC-SHA256 con sal aleatoria en `pro-access.json`, junto a `plan.config.json`; no se guarda la contraseña. Si falta o es inválido, Pro permanece cerrado. Como el paquete contiene scripts editables, esta barrera de interfaz necesita permisos de Windows para resistir modificaciones externas. Conserve ese archivo al actualizar; el ZIP no cambia la clave de instalaciones existentes. Motores y tareas en segundo plano no necesitan iniciar sesión en Pro.
+
+Los lanzadores preparan automáticamente los scripts incluidos al abrirlos; no hace falta ejecutar un comando de desbloqueo. Si Pro ya está abierto para esa carpeta, una nueva apertura vuelve a mostrar su ventana y conserva la sesión autenticada.
 
 Pro → Estado → **Configurar Usuarios** ajusta secado diario, preparación/enfriamiento, niveles, vídeo/NEGRO, salida de Windows y lienzo SCALE. Usuarios solo ofrece PREHEAT, APAGADO, MAIN/PIP1/PIP2/SCALE, estado y soporte. El perfil nuevo empieza sin aceptar y sin salida elegida: no inicia escrituras por defecto. [Configurar y entregar desde Pro](docs/pro-usuarios.md) · [Guía Usuarios](docs/usuarios.md).
 
@@ -142,7 +144,7 @@ Para ejecutar en el PC Windows del sitio, entrando por RustDesk. Windows PowerSh
 
 Extrae **todo el ZIP** a una carpeta local y abre `Diagnosticar-VX400.bat`. No lo ejecutes desde dentro del ZIP. Pedirá la IP; Enter sin IP recoge únicamente el inventario local/USB mediante la ventana abierta de NovaLCT. El BAT no habilita pruebas activas ni recibe comandos de escritura.
 
-El lanzador utiliza la política `RemoteSigned` solamente en su proceso de PowerShell; no modifica la política permanente del equipo. Si Windows marca los archivos descargados como bloqueados, revisa su contenido y usa **Propiedades → Desbloquear** en los archivos del diagnóstico. Una política administrada puede seguir impidiendo su ejecución; conserva el mensaje para revisarlo.
+Los lanzadores de control preparan los scripts y módulos incluidos antes de abrir la interfaz. La preparación retira únicamente su marca de descarga, mantiene `RemoteSigned` y no cambia la política permanente ni permisos de Windows. Una política corporativa que exija firma o bloquee la aplicación sigue vigente; conserva el mensaje para revisarlo.
 
 ## Primera ejecución desde PowerShell: solo lectura
 

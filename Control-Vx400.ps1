@@ -24,6 +24,41 @@ if ([Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') { throw 'Abra es
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [Windows.Forms.Application]::EnableVisualStyles()
+
+function Get-ProActivationName([string]$Directory) {
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try {$key=[BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Directory.ToLowerInvariant()))).Replace('-','')}
+    finally {$sha.Dispose()}
+    return 'Local\NovaStar-VX400-GUI-Activate-'+$key
+}
+function Send-ProActivationRequest([string]$Directory) {
+    $event=$null
+    try {
+        $event=[Threading.EventWaitHandle]::OpenExisting((Get-ProActivationName $Directory))
+        return $event.Set()
+    } catch [Threading.WaitHandleCannotBeOpenedException] {return $false}
+      catch [UnauthorizedAccessException] {return $false}
+    finally {if($null -ne $event){$event.Dispose()}}
+}
+function Set-ProActivationListener([string]$Directory) {
+    $next=[Threading.EventWaitHandle]::new($false,[Threading.EventResetMode]::AutoReset,(Get-ProActivationName $Directory))
+    if($null -ne $script:activationEvent){$script:activationEvent.Dispose()}
+    $script:activationEvent=$next
+}
+function Restore-ProWindow {
+    if($null -eq $script:activationEvent -or -not $script:activationEvent.WaitOne(0)){return}
+    if($script:form.IsDisposed){return}
+    if($script:form.WindowState -eq 'Minimized'){$script:form.WindowState='Normal'}
+    $script:form.Show()
+    # Recover a window left outside the current monitor layout without touching video output.
+    $visible=$false
+    foreach($screen in [Windows.Forms.Screen]::AllScreens){if($screen.WorkingArea.IntersectsWith($script:form.Bounds)){$visible=$true;break}}
+    if(-not $visible){$area=[Windows.Forms.Screen]::FromPoint([Windows.Forms.Cursor]::Position).WorkingArea;$script:form.Location=New-Object Drawing.Point($area.Left,$area.Top)}
+    $script:form.BringToFront();$null=$script:form.Activate()
+}
+# Reuse an already authenticated Pro session before asking for its key a second time.
+# Handoff creates a successor after the predecessor closes, so it must not activate that predecessor.
+if(-not $SmokeTest -and -not $GuiHandoff -and (Send-ProActivationRequest $DataDirectory)){return}
 # Installed machine-wide data is private to Administrators/SYSTEM. Let Windows request UAC on double click.
 if(-not $SmokeTest -and $ConfigPath.StartsWith($installedRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
     $principal=New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -81,7 +116,7 @@ $script:blue=[Drawing.Color]::FromArgb(24,82,166)
 $script:ink=[Drawing.Color]::FromArgb(25,40,64)
 $script:muted=[Drawing.Color]::FromArgb(94,111,133)
 $script:background=[Drawing.Color]::FromArgb(242,246,251)
-$script:mutex=$null; $script:ownsMutex=$false
+$script:mutex=$null; $script:ownsMutex=$false; $script:activationEvent=$null
 
 function Get-Property($Object,[string]$Name,$Default='') {
     if ($null -ne $Object -and $null -ne $Object.PSObject.Properties[$Name]) { return $Object.$Name }
@@ -370,7 +405,7 @@ function Use-InstalledContext {
     if(-not $script:smoke -and -not (Request-VxProAccess -Path $nextAccess -Owner $script:form)){throw 'La instalación está guardada. Abra Pro y autentíquese para usarla.'}
     $script:proAccessPath=$nextAccess
     $loaded=Read-VxPlanConfig -Path $nextConfig
-    if($script:dataDirectory -ne $nextData){Set-GuiMutex $nextData}
+    if($script:dataDirectory -ne $nextData){Set-GuiMutex $nextData;Set-ProActivationListener $nextData}
     $script:configPath=$nextConfig;$script:dataDirectory=$nextData;$script:config=$loaded
     $script:state=$null;$script:stateRecent=$false;$script:logOffset=0L;$script:logFragment='';$script:logLines.Clear();$script:logIdentity=''
     Update-Requests;Update-Status;Update-Log
@@ -805,7 +840,7 @@ function Update-LayerResult {
 }
 
 function Update-ConnectionLabels {
-    $script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.1'
+    $script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.2'
     $script:headerTitle.Text=$script:config.deviceModel+'  /  Control local'
     $destination=if($script:config.connectionType -eq 'USB'){'USB · '+$(if($script:config.usbDeviceKey){$script:config.usbDeviceKey}else{'selección automática'})}else{'Ethernet · '+$script:config.deviceAddress+':'+$script:config.tcpPort}
     $script:endpoint.Text=$destination+'  ·  '+$script:config.timeZone
@@ -867,7 +902,7 @@ function Update-ConnectionProbe {
 
 
 $script:form=New-Object Windows.Forms.Form
-$script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.1'
+$script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.2'
 $script:form.ClientSize=New-Object Drawing.Size(1200,860)
 $script:form.MinimumSize=New-Object Drawing.Size(1050,700)
 $script:form.StartPosition='CenterScreen';$script:form.BackColor=$script:background
@@ -1306,19 +1341,24 @@ function Invoke-GuiSmoke {
     }finally{$script:form.Close();$script:configPath=$originalConfig;$script:dataDirectory=$originalData;if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Recurse -Force}}
 }
 
-$timer=New-Object Windows.Forms.Timer;$timer.Interval=1000;$timer.Add_Tick({Invoke-Tick})
+$timer=New-Object Windows.Forms.Timer;$timer.Interval=1000;$timer.Add_Tick({Restore-ProWindow;Invoke-Tick})
 $script:form.Add_FormClosed({$timer.Stop()})
 try{
     Show-Profile dry
     if($script:smoke){Invoke-GuiSmoke}
     else{
         Set-GuiMutex $script:dataDirectory
+        Set-ProActivationListener $script:dataDirectory
         Invoke-UiAction {Update-Requests}
         if($RecoverOnOpen){$script:form.Add_Shown({Invoke-UiAction {Start-ControlRecovery $false}})}
         $timer.Start();$null=$script:form.ShowDialog()
     }
+}catch{
+    if(-not $script:smoke){$null=[Windows.Forms.MessageBox]::Show($_.Exception.Message,'No se pudo abrir Pro','OK','Error')}
+    throw
 }finally{
     $timer.Stop();$timer.Dispose();$script:form.Dispose()
+    if($null -ne $script:activationEvent){$script:activationEvent.Dispose()}
     if($script:ownsMutex){$script:mutex.ReleaseMutex()}
     if($null -ne $script:mutex){$script:mutex.Dispose()}
     # Closing the window leaves the explicitly started background controller running.

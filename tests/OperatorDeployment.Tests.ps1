@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
@@ -34,7 +34,7 @@ try{
     }
     Assert ((Get-FileHash (Join-Path $destination 'pro-access.json')).Hash -eq $policyHash) 'Policy belongs to selected installation, byte exact'
     $edition=Get-Content (Join-Path $destination 'edition.json') -Raw|ConvertFrom-Json
-    Assert ($edition.edition -ceq 'Unified' -and $edition.version -ceq '0.8.1') 'Unified edition metadata'
+    Assert ($edition.edition -ceq 'Unified' -and $edition.version -ceq '0.8.2') 'Unified edition metadata'
     Assert ([IO.File]::Exists((Join-Path $destination 'docs/usuarios.md'))) 'Documentation preserves relative paths'
     Assert (-not [IO.File]::Exists((Join-Path $destination 'private-media.mp4'))) 'Export never bundles selected media'
     Assert (-not [IO.Directory]::Exists((Join-Path $destination 'plan-data'))) 'Export excludes runtime commands/session/data'

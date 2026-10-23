@@ -7,6 +7,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Double-click launchers prepare downloaded scripts
+        shell: powershell
+        run: .\tests\Launchers.Windows.Tests.ps1
       - name: Windows PowerShell 5.1 protocol tests
         shell: powershell
         run: .\tests\Protocol.Tests.ps1
@@ -22,6 +25,9 @@ jobs:
           .\tests\ProAccess.Tests.ps1
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -STA -File .\tests\ProAccessGui.Tests.ps1
           if ($LASTEXITCODE -ne 0) { throw 'Pro access dialogs failed' }
+      - name: Real Pro login and duplicate-window activation
+        shell: powershell
+        run: .\tests\ProStartup.Windows.Tests.ps1
       - name: Users engine, deployment and media rules
         shell: powershell
         run: |

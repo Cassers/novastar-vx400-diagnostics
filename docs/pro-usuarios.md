@@ -2,6 +2,8 @@
 
 Abra **Abrir-Control-Pro.bat** o **Usuarios → Acceso Pro…** e introduzca la clave Pro. La clave temporal exige elegir una nueva de al menos 12 caracteres antes de abrir los ajustes. Puede cambiarla después en **Pro → Estado → Cambiar clave Pro**. Cancelar conserva los archivos y deja Pro cerrado. Pro conserva la interfaz avanzada y añade **Estado → Configurar Usuarios**. Usuarios utiliza `plan.config.json` para la conexión y `operator.config.json` para su perfil diario separado; guardar este último conserva el calendario avanzado.
 
+Si Pro ya estaba abierto en esa carpeta, el lanzador vuelve a mostrar la ventana existente. Para entrar de nuevo tras cerrarla, utilice la clave que guardó al cambiar la temporal.
+
 ## Primera puesta en marcha
 
 1. En Pro → Estado, seleccione VX600 original y USB o Ethernet. Pruebe la identidad y guarde. Compruebe físicamente las condiciones de arranque antes de marcar sus verificaciones.

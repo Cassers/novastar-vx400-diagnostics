@@ -17,7 +17,7 @@ function Get-VxUserPackageFiles {
         $_.Name -like '*.runtimeconfig.json' -or $_.Name -like '*.deps.json'
     } | ForEach-Object {$_.Name})
     # Fail closed when assembling an incomplete checkout rather than omit the Pro gate.
-    $files+=@('Control-Vx400.ps1','Control-VxUsuarios.ps1','Configurar-VxUsuarios.ps1','Vx.ProAccess.psm1','Export-VxUsuarios.ps1','Abrir-NovaStar.bat')
+    $files+=@('Control-Vx400.ps1','Control-VxUsuarios.ps1','Configurar-VxUsuarios.ps1','Vx.ProAccess.psm1','Export-VxUsuarios.ps1','Abrir-NovaStar.bat','Preparar-NovaStar.bat')
     return @($files | Sort-Object -Unique)
 }
 function Get-VxPrincipalSid([string]$UserId) {

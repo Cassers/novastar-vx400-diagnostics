@@ -22,3 +22,5 @@ Los niveles son consignas confirmadas por protocolo, no mediciones ópticas ni c
 ## Acceso Pro
 
 **Acceso Pro…** abre la configuración avanzada y pide la clave del responsable. Usuarios sigue disponible sin contraseña. La primera clave temporal exige cambiarla antes de abrir Pro. Abrir Pro no detiene ni reinicia el motor; para guardar conexión o perfil, el responsable debe solicitar parada y esperar su confirmación.
+
+Los lanzadores de control preparan automáticamente los scripts del paquete. No necesita pegar comandos en PowerShell para abrir la aplicación.

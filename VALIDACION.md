@@ -2,6 +2,10 @@
 
 2026-10-22. Pruebas automatizadas ejecutadas exclusivamente en simuladores; la ejecución física del diagnóstico fue realizada por el operador del sitio, según captura recibida. El nuevo secuenciador no ha enviado escrituras a hardware real.
 
+## Arranque por doble clic v0.8.2
+
+Se añade preparación automática de los scripts incluidos y activación de Pro cuando su ventana ya existe. La regresión de Windows utiliza Zone.Identifier real para reproducir el bloqueo, BAT reales con stubs de interfaz sin hardware y una prueba negativa de RemoteSigned. También se prueba el acceso real: clave temporal, cambio obligatorio, seis pestañas Pro, reapertura con clave nueva y restauración de una ventana minimizada mediante una segunda apertura. No se cambia la política general ni la autenticación Pro. Los resultados definitivos se asocian al commit de la entrega.
+
 ## Entrega unificada y clave Pro v0.8.1
 
 La nueva entrega combina Usuarios y Pro. Se comprueban el verificador de contraseña, cambio obligatorio inicial, preservación de la clave elegida, exportación completa y accesos nativos en Windows PowerShell 5.1. La evidencia definitiva de CI y sus límites se asocia al commit de la entrega; no se considera validado hardware real por estas pruebas.

@@ -42,7 +42,7 @@ try{
     }
     if([IO.File]::Exists((Join-Path $PSScriptRoot 'docs/usuarios.md'))){Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'docs/usuarios.md') -Destination (Join-Path $staging 'LEEME.md')}
     # Local media paths are preserved. Files may be large/private: do not silently bundle them.
-    [IO.File]::WriteAllText((Join-Path $staging 'edition.json'),'{"schemaVersion":1,"edition":"Unified","version":"0.8.1"}',(New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText((Join-Path $staging 'edition.json'),'{"schemaVersion":1,"edition":"Unified","version":"0.8.2"}',(New-Object Text.UTF8Encoding($false)))
     if([IO.Directory]::Exists($Destination)){
         if(@(Get-ChildItem -LiteralPath $Destination -Force).Count){throw 'El destino cambió durante la exportación.'}
         [IO.Directory]::Delete($Destination)

@@ -1,5 +1,4 @@
 @echo off
-setlocal
-cd /d "%~dp0"
-call "%~dp0Abrir-Control-Usuarios.bat" %*
-endlocal
+setlocal DisableDelayedExpansion
+cd /d "%~dp0" || exit /b 1
+".\Abrir-Control-Usuarios.bat" %*

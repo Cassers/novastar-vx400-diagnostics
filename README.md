@@ -10,6 +10,8 @@ Pro → Estado → **Configurar Usuarios** ajusta secado diario, preparación/en
 
 Cerrar Usuarios deja motor y reproductor independientes en segundo plano. Su inicio automático se activa desde Pro **al iniciar sesión**, requiere Windows despierto y sesión abierta. El calendario avanzado de Pro sigue usando su motor anterior y perfiles separados: elija un único inicio para cada conexión.
 
+[Diagnóstico preliminar VX600 Pro por Ethernet](docs/vx-pro-identidad.md): lectura de identidad aislada, sin habilitar control ni USB Pro. El soporte operativo de esta app sigue limitado a VX400/VX600 originales.
+
 ## Funciones avanzadas conservadas
 
 Para ajustar conexión, abra **`Abrir-Control-Pro.bat`**, autentíquese y conserve el paquete **completo**. Seleccione el modelo original y **Ethernet** o **USB** en Estado. **Probar conexión** consulta la identidad sin cambiar brillo ni contenido. USB añade **Buscar USB** y selección de dispositivo usando el driver original NovaStar/libusb0 instalado; NovaLCT no necesita estar abierto.

@@ -7,6 +7,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: VX Pro read-only identity script and native BAT (loopback only)
+        shell: powershell
+        run: python .\tests\vx_pro_identity_tests.py
       - name: Double-click launchers prepare downloaded scripts
         shell: powershell
         run: .\tests\Launchers.Windows.Tests.ps1

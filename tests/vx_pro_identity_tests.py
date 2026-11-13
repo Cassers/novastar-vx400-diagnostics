@@ -125,7 +125,9 @@ class IdentityTests(unittest.TestCase):
             self.assertFalse(negative.exists(), 'Negative MOTW control must refuse execution')
             # No BAT arguments: actual double-click path prompts for IPv4, default TCP15200.
             with IdentityServer(port=15200) as server:
-                result = subprocess.run([os.environ['COMSPEC'], '/D', '/V:ON', '/S', '/C', '""%VXPRO_TEST_BAT%""'],
+                # cmd needs its own quote grammar, not Python's C-runtime list escaping.
+                command = '"' + os.environ['COMSPEC'] + '" /D /V:ON /S /C ""%VXPRO_TEST_BAT%""'
+                result = subprocess.run(command,
                                         input='127.0.0.1\n\n', capture_output=True, text=True, env=env, timeout=20)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 start = result.stdout.index('{'); end = result.stdout.rindex('}')+1

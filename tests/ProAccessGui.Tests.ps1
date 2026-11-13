@@ -66,7 +66,7 @@ function NativeRun($entries,[scriptblock]$action) {
 $directory=Join-Path ([IO.Path]::GetTempPath()) ('vx-pro-gui-'+[Guid]::NewGuid().ToString('N'))
 $null=[IO.Directory]::CreateDirectory($directory);$path=Join-Path $directory 'pro-access.json'
 $password=ConvertTo-SecureString 'native-initial-secret-2026' -AsPlainText -Force
-$replacement=ConvertTo-SecureString 'native-replaced-secret-2026' -AsPlainText -Force
+$replacement=ConvertTo-SecureString 'Test1234' -AsPlainText -Force
 try {
     $policy=New-VxProAccessPolicy -Password $password;Save $policy $path
     $result=NativeRun @(@{mode='Login';cancel=$true}) {Request-VxProAccess $path}
@@ -81,15 +81,23 @@ try {
     $result=NativeRun @(@{mode='Login';cancel=$false;CurrentPassword='native-initial-secret-2026'},@{mode='Change';cancel=$true;error='*temporal*'}) {Request-VxProAccess $path}
     Assert (-not $result) 'Native forced change cancel denies'
     Assert ([IO.File]::ReadAllText($path) -ceq $original) 'Native canceled change leaves policy untouched'
-    $result=NativeRun @(@{mode='Change';cancel=$false;CurrentPassword='native-initial-secret-2026';NewPassword='native-replaced-secret-2026';ConfirmPassword='native-mismatch-secret-2026'},@{mode='Change';cancel=$true;error='*confirmacion*'}) {Request-VxProPasswordChange $path}
+    $result=NativeRun @(@{mode='Change';cancel=$false;CurrentPassword='native-initial-secret-2026';NewPassword='Test1234';ConfirmPassword='native-mismatch-secret-2026'},@{mode='Change';cancel=$true;error='*confirmacion*'}) {Request-VxProPasswordChange $path}
     Assert (-not $result) 'Native confirmation mismatch denied'
     Assert ([IO.File]::ReadAllText($path) -ceq $original) 'Native mismatch leaves policy untouched'
     $result=NativeRun @(@{mode='Change';cancel=$false;CurrentPassword='native-initial-secret-2026';NewPassword='native-initial-secret-2026';ConfirmPassword='native-initial-secret-2026'},@{mode='Change';cancel=$true;error='*diferente*'}) {Request-VxProPasswordChange $path}
     Assert (-not $result) 'Native same password denied'
-    $result=NativeRun @(@{mode='Login';cancel=$false;CurrentPassword='native-initial-secret-2026'},@{mode='Change';cancel=$false;CurrentPassword='native-initial-secret-2026';NewPassword='native-replaced-secret-2026';ConfirmPassword='native-replaced-secret-2026'}) {Request-VxProAccess $path}
+    $result=NativeRun @(@{mode='Change';cancel=$false;CurrentPassword='native-initial-secret-2026';NewPassword='Test123';ConfirmPassword='Test123'},@{mode='Change';cancel=$true;error='*entre 8 y 1024*'}) {Request-VxProPasswordChange $path}
+    Assert (-not $result) 'Native seven-character change denied'
+    Assert ([IO.File]::ReadAllText($path) -ceq $original) 'Native seven-character rejection preserves policy'
+    $result=NativeRun @(@{mode='Login';cancel=$false;CurrentPassword='native-initial-secret-2026'},@{mode='Change';cancel=$false;CurrentPassword='native-initial-secret-2026';NewPassword='Test1234';ConfirmPassword='Test1234'}) {Request-VxProAccess $path}
     Assert $result 'Native forced first change grants only after save'
     $changed=Read-VxProAccessPolicy $path
     Assert (-not $changed.requireChange -and (Test-VxProPassword $changed $replacement) -and -not (Test-VxProPassword $changed $password)) 'Native new secret replaces temporary secret'
+    & $module {$script:proGrants=@{}}
+    $beforeCold=[IO.File]::ReadAllText($path)
+    $result=NativeRun @(@{mode='Login';cancel=$false;CurrentPassword='Test1234'}) {Request-VxProAccess $path}
+    Assert $result 'Native cold login with eight characters grants'
+    Assert ([IO.File]::ReadAllText($path) -ceq $beforeCold) 'Native cold login preserves eight-character policy'
     # Invoke actual entrypoints with valid auth fixtures and deliberately unusable configs.
     # Cancellation must return before config parsing, controller construction or hardware access.
     $planPath=Join-Path $directory 'plan.config.json';$profilePath=Join-Path $directory 'operator.config.json'

@@ -29,6 +29,27 @@ $directory=Join-Path ([IO.Path]::GetTempPath()) ('vx-pro-test-'+[Guid]::NewGuid(
 $null=[IO.Directory]::CreateDirectory($directory);$path=Join-Path $directory 'pro-access.json'
 $password=Secret 'test-initial-secret-2026';$other=Secret 'test-replacement-secret-2026';$wrong=Secret 'test-wrong-secret-2026';$short=Secret 'short'
 try {
+    # Public disposable boundary fixtures exercise create, change and cold login paths.
+    $seven=Secret 'Test123';$eight=Secret 'Test1234';$nine=Secret 'Test12345';$legacy=Secret 'Legacy123456'
+    try {
+        Reject {New-VxProAccessPolicy -Password $seven} 'Seven-character create rejected'
+        foreach($candidate in @($eight,$nine,$legacy)) {
+            $boundary=New-VxProAccessPolicy -Password $candidate
+            Assert (Test-VxProPassword $boundary $candidate) ('Create accepts length '+$candidate.Length)
+            Save $boundary $path;$unchanged=[IO.File]::ReadAllText($path)
+            Reject {Set-VxProPassword $path $candidate $seven} 'Seven-character change rejected'
+            Assert ([IO.File]::ReadAllText($path) -ceq $unchanged) 'Rejected seven-character change preserves policy bytes'
+            Set-VxProPassword $path $candidate $password
+            Set-VxProPassword $path $password $candidate
+            Assert (Test-VxProPassword (Read-VxProAccessPolicy $path) $candidate) ('Change accepts length '+$candidate.Length)
+        }
+        Save (New-VxProAccessPolicy -Password $legacy) $path
+        $beforeLogin=[IO.File]::ReadAllText($path)
+        QueueDialogs @(@{mode='Login';cancel=$false;CurrentPassword='Legacy123456'})
+        Assert (Request-VxProAccess $path) 'Existing twelve-character policy login preserved'
+        Assert ([IO.File]::ReadAllText($path) -ceq $beforeLogin) 'Existing login preserves policy bytes'
+        Remove-Item -LiteralPath $path
+    } finally {foreach($value in @($seven,$eight,$nine,$legacy)){$value.Dispose()}}
     $policy=New-VxProAccessPolicy -Password $password -RequireChange
     Assert ($policy.requireChange -and $policy.iterations -eq 600000 -and $policy.kdf -ceq 'PBKDF2-SHA256') 'New strict policy'
     Assert ([Convert]::FromBase64String($policy.salt).Length -eq 32 -and [Convert]::FromBase64String($policy.hash).Length -eq 32) 'Random 32 byte salt and derived hash'

@@ -2,6 +2,10 @@
 
 2026-10-22. Pruebas automatizadas ejecutadas exclusivamente en simuladores; la ejecución física del diagnóstico fue realizada por el operador del sitio, según captura recibida. El nuevo secuenciador no ha enviado escrituras a hardware real.
 
+## Mínimo de clave Pro v0.8.3
+
+Las claves nuevas y cambiadas aceptan 8–1024 caracteres. Las pruebas de creación y cambio cubren 7 (rechazo), 8, 9 y 12 (aceptación); un rechazo conserva el verificador. El acceso a una política existente de 12 caracteres conserva sus bytes. Las pruebas nativas introducen 7 y 8 caracteres en el diálogo real y reabren Pro y el configurador con una clave pública desechable de exactamente 8 caracteres. El verificador y la clave actuales del usuario no se restablecen. Resultados y commit exactos: recibo de la entrega.
+
 ## Arranque por doble clic v0.8.2
 
 Se añade preparación automática de los scripts incluidos y activación de Pro cuando su ventana ya existe. La regresión de Windows utiliza Zone.Identifier real para reproducir el bloqueo, BAT reales con stubs de interfaz sin hardware y una prueba negativa de RemoteSigned. También se prueba el acceso real: clave temporal, cambio obligatorio, seis pestañas Pro, reapertura con clave nueva y restauración de una ventana minimizada mediante una segunda apertura. No se cambia la política general ni la autenticación Pro. Los resultados definitivos se asocian al commit de la entrega.

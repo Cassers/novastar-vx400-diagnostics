@@ -840,7 +840,7 @@ function Update-LayerResult {
 }
 
 function Update-ConnectionLabels {
-    $script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.2'
+    $script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.3'
     $script:headerTitle.Text=$script:config.deviceModel+'  /  Control local'
     $destination=if($script:config.connectionType -eq 'USB'){'USB · '+$(if($script:config.usbDeviceKey){$script:config.usbDeviceKey}else{'selección automática'})}else{'Ethernet · '+$script:config.deviceAddress+':'+$script:config.tcpPort}
     $script:endpoint.Text=$destination+'  ·  '+$script:config.timeZone
@@ -902,7 +902,7 @@ function Update-ConnectionProbe {
 
 
 $script:form=New-Object Windows.Forms.Form
-$script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.2'
+$script:form.Text='NovaStar '+$script:config.deviceModel+' · Pro v0.8.3'
 $script:form.ClientSize=New-Object Drawing.Size(1200,860)
 $script:form.MinimumSize=New-Object Drawing.Size(1050,700)
 $script:form.StartPosition='CenterScreen';$script:form.BackColor=$script:background

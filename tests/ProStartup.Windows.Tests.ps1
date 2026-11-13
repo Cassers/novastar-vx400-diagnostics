@@ -97,7 +97,7 @@ function Start-Process { [IO.File]::AppendAllText($script:sentinel,'Unexpected S
 
 Import-Module (Join-Path $runtime 'Vx.ProAccess.psm1') -Force
 # These are public, disposable test values, unrelated to the distributed private key.
-$initialText='fixture-temporary-key-2026';$changedText='fixture-changed-key-2026'
+$initialText='fixture-temporary-key-2026';$changedText='Test1234'
 $initial=ConvertTo-SecureString $initialText -AsPlainText -Force
 $changed=ConvertTo-SecureString $changedText -AsPlainText -Force
 
@@ -209,7 +209,7 @@ try{
     Invoke-NativeStartup 'Control-Vx400.ps1' @(
         @{mode='Login';CurrentPassword=$initialText},
         @{mode='Change';CurrentPassword=$initialText;NewPassword=$changedText;ConfirmPassword=$changedText}
-    ) '*Pro v0.8.2' 6 -TestDuplicate
+    ) '*Pro v0.8.3' 6 -TestDuplicate
     $policy=Read-VxProAccessPolicy $policyPath
     Assert (-not $policy.requireChange) 'Real first login saved the required key change'
     Assert (-not (Test-VxProPassword $policy $initial)) 'Temporary fixture key no longer authenticates'
@@ -218,7 +218,7 @@ try{
     $policyAfter=(Get-FileHash -LiteralPath $policyPath).Hash
     # Reproduce reopening Pro with the changed key and a cold auth module.
     Remove-Module Vx.ProAccess -Force
-    Invoke-NativeStartup 'Control-Vx400.ps1' @(@{mode='Login';CurrentPassword=$changedText}) '*Pro v0.8.2' 6
+    Invoke-NativeStartup 'Control-Vx400.ps1' @(@{mode='Login';CurrentPassword=$changedText}) '*Pro v0.8.3' 6
     Assert ((Get-FileHash -LiteralPath $policyPath).Hash -ceq $policyAfter) 'Reopened Pro preserves the replacement policy'
     # Drop the real module to remove its process grant; standalone configurator must prompt.
     Remove-Module Vx.ProAccess -Force -ErrorAction SilentlyContinue

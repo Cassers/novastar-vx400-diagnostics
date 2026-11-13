@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 Set-StrictMode -Version Latest
 $script:proGrants=@{}
 
@@ -25,7 +25,7 @@ function Get-VxProDerivedBytes {
     param([Security.SecureString]$Password,[byte[]]$Salt,[int]$Iterations)
     $pointer=[IntPtr]::Zero;$chars=$null;$passwordBytes=$null;$derive=$null
     try {
-        if($null -eq $Password -or $Password.Length -eq 0 -or $Password.Length -gt 1024){ throw 'La clave debe tener entre 12 y 1024 caracteres.' }
+        if($null -eq $Password -or $Password.Length -eq 0 -or $Password.Length -gt 1024){ throw 'La clave debe tener entre 8 y 1024 caracteres.' }
         $pointer=[Runtime.InteropServices.Marshal]::SecureStringToGlobalAllocUnicode($Password)
         $chars=New-Object char[] $Password.Length
         [Runtime.InteropServices.Marshal]::Copy($pointer,$chars,0,$chars.Length)
@@ -44,7 +44,7 @@ function Get-VxProDerivedBytes {
 function New-VxProAccessPolicy {
     [CmdletBinding()]
     param([Parameter(Mandatory)][Security.SecureString]$Password,[switch]$RequireChange)
-    if($Password.Length -lt 12 -or $Password.Length -gt 1024){throw 'La clave debe tener entre 12 y 1024 caracteres.'}
+    if($Password.Length -lt 8 -or $Password.Length -gt 1024){throw 'La clave debe tener entre 8 y 1024 caracteres.'}
     $salt=New-Object byte[] 32;$rng=[Security.Cryptography.RandomNumberGenerator]::Create()
     try {$rng.GetBytes($salt)} finally {$rng.Dispose()}
     $hash=Get-VxProDerivedBytes $Password $salt 600000
@@ -107,7 +107,7 @@ function Set-VxProPassword {
     if(-not $locked){throw 'La politica Pro esta ocupada.'}
     $snapshot=Get-VxProSnapshot $Path
     if(-not (Test-VxProPassword $snapshot.policy $CurrentPassword)){throw 'Clave actual incorrecta.'}
-    if($NewPassword.Length -lt 12 -or $NewPassword.Length -gt 1024){throw 'La clave nueva debe tener entre 12 y 1024 caracteres.'}
+    if($NewPassword.Length -lt 8 -or $NewPassword.Length -gt 1024){throw 'La clave nueva debe tener entre 8 y 1024 caracteres.'}
     if(Test-VxProPassword $snapshot.policy $NewPassword){throw 'La clave nueva debe ser diferente.'}
     $policy=New-VxProAccessPolicy -Password $NewPassword
     $temp=$snapshot.path+'.'+[Guid]::NewGuid().ToString('N')+'.tmp'
@@ -140,7 +140,7 @@ function Read-VxProDialog {
     $boxes=@{};$row=15
     foreach($name in $fields){
         $label=New-Object Windows.Forms.Label;$label.Location=New-Object Drawing.Point(15,$row);$label.AutoSize=$true
-        $label.Text=switch($name){'CurrentPassword'{if($Mode -eq 'Login'){'Clave Pro'}else{'Clave actual'}}'NewPassword'{'Nueva clave (minimo 12 caracteres)'}'ConfirmPassword'{'Confirmar nueva clave'}}
+        $label.Text=switch($name){'CurrentPassword'{if($Mode -eq 'Login'){'Clave Pro'}else{'Clave actual'}}'NewPassword'{'Nueva clave (minimo 8 caracteres)'}'ConfirmPassword'{'Confirmar nueva clave'}}
         $form.Controls.Add($label)
         $box=New-Object Windows.Forms.TextBox;$box.Name=$name;$box.Location=New-Object Drawing.Point(15,($row+22));$box.Width=410
         $box.UseSystemPasswordChar=$true;$box.MaxLength=1024;$form.Controls.Add($box);$boxes[$name]=$box;$row+=63
